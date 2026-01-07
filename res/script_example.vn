@@ -2,6 +2,7 @@ block start { // Always beginning execution from "start" block
     mc "..."
     mc ""Very long string. Newlines are replaced with spaces.
     Continuation of a very long string.""
+    execute continuation
 }
 
 block continuation {
