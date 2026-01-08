@@ -6,5 +6,5 @@ block start { // Always beginning execution from "start" block
 }
 
 block continuation {
-    narr "This is some text."
+    "This is some text."
 }

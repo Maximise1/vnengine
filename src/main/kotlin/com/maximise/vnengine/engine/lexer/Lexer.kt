@@ -30,10 +30,13 @@ class Lexer {
     fun tokenize(s: String): List<Token> {
         script = s
         val tokens: MutableList<Token> = mutableListOf()
+        cursor = 0
+        line = 1
+        col = 1
 
         while (peek() != null) {
             val token = parseToken()
-            println(token)
+            //println(token)
             tokens.add(token)
         }
 
@@ -44,7 +47,7 @@ class Lexer {
         var next = peek()
 
         // Skipping newlines, comments, and whitespaces
-        while (next in listOf('/', '\n', ' ')) {
+        while (next == '/' || next == '\n' || next == ' ') {
             when (next) {
                 ' ' -> advance()
                 '/' -> if (peek(1) == '/') {
