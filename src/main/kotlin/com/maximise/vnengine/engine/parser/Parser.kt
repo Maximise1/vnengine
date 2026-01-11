@@ -130,7 +130,6 @@ class Parser {
     }
 
     private fun parseExecute(): VnNode.ExecuteStatement {
-        advance()
         val blockName = advance()
 
         if (blockName !is Token.Identifier) {
