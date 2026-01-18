@@ -1,10 +1,30 @@
 package com.maximise.vnengine.engine.parser
 
 import com.maximise.vnengine.engine.lexer.Token
+import kotlin.reflect.KClass
+import kotlin.to
 
 class Parser {
+
+    private val operators: Map<KClass<out Token>, BinaryExpression> = mapOf(
+        Token.EqualsOperator::class to BinaryExpression.EQUAL,
+        Token.GreaterOperator::class to BinaryExpression.GREATER,
+        Token.GreaterOrEqualOperator::class to BinaryExpression.GREATER_EQUAL,
+        Token.LessOperator::class to BinaryExpression.LESS,
+        Token.LessOrEqualOperator::class to BinaryExpression.LESS_EQUAL,
+        Token.AndOperator::class to BinaryExpression.AND,
+        Token.OrOperator::class to BinaryExpression.OR,
+        Token.PlusOperator::class to BinaryExpression.PLUS,
+        Token.DivOperator::class to BinaryExpression.DIV,
+        Token.MinusOperator::class to BinaryExpression.MINUS,
+        Token.RemOperator::class to BinaryExpression.REM,
+        Token.MulOperator::class to BinaryExpression.MUL,
+        Token.PowOperator::class to BinaryExpression.POW
+    )
+
     private var cursor: Int = 0
     private var tokens: List<Token> = listOf()
+    private var executionBodyId: Int = 0
 
     private fun peek(offset: Int = 0): Token? {
         return if (tokens.size <= cursor + offset) {
@@ -27,8 +47,10 @@ class Parser {
 
     fun parseProgram(inputTokens: List<Token>): VnNode.Program {
         cursor = 0
+        executionBodyId = 0
         tokens = inputTokens
         val blocks = mutableMapOf<String, VnNode.Block>()
+        val executionBodies = mutableMapOf<Int, List<VnNode>>()
 
         while (peek() != null && peek() != Token.EOF) {
             val block = parseBlock()
@@ -39,84 +61,131 @@ class Parser {
         }
 
         return VnNode.Program(
-            blocks = blocks
+            blocks = blocks,
+            executionBodies = executionBodies
         )
     }
 
-    private fun parseBlock(): VnNode.Block {
-        var token = advance()
-        val blockContents = mutableListOf<VnNode>()
-        val innerBlocks = mutableMapOf<String, VnNode.Block>()
-        if (!(token is Token.Keyword && token.value == "block")) {
-            throw RuntimeException("Every block must start with a \"block\" keyword")
+    private fun parseIdentifier(): VnNode {
+        val afterNext = peek(1)
+        if (afterNext is Token.AssignOperator) {
+            return parseAssignStatement()
+        } else if (afterNext is Token.StringLiteral) {
+            return parseDialogue()
+        } else {
+            throw RuntimeException(
+                "Identifier ${peek()} followed by unexpected syntax: ${peek(1)}")
         }
+    }
 
-        token = advance()
-        if (token !is Token.Identifier) {
-            throw RuntimeException("\"block\" keyword must be followed with a block name. Example: block empty_block {}")
-        }
-        val blockName = token.value
-        val blockPos = SourcePos(
-            line = token.line,
-            column = token.col
-        )
-
-        token = advance()
-        if (token !is Token.OpenBracket) {
-            throw RuntimeException("Every block must start with an open bracket. Example: block empty_block {}")
-        }
-
-        while (peek() !is Token.CloseBracket) {
-            token = peek()
-            if (token == null || token is Token.EOF) {
-                throw RuntimeException("Every block must end with a close bracket. Example: block empty_block {}")
-            }
-
-            // Random numbers that don't fit anywhere become ignored statements for later warning
-            if (token is Token.NumberLiteral) {
-                blockContents.add(VnNode.IgnoredStatement(
-                    value = token.value.toString(),
-                    pos = SourcePos(
-                        line = token.line,
-                        column = token.col
-                    )
-                ))
-                advance()
-                continue
-            }
-
-            //println(token)
-
-            val node = when (token) {
-                is Token.Keyword -> parseKeyword()
-                is Token.StringLiteral -> parseDialogue()
-                is Token.Identifier -> parseDialogue()
-                is Token.OpenBracket -> throw RuntimeException("Unexpected open bracket encountered")
-                Token.EOF -> throw RuntimeException("Unexpected end of file encountered")
-                else -> throw RuntimeException("Unexpected token encountered: $token")
-            }
-
-            if (node is VnNode.Block) {
-                if (innerBlocks.containsKey(node.name)) {
-                    throw RuntimeException("Duplicate block: ${node.name}")
-                }
-                innerBlocks.put(
-                    key = node.name,
-                    value = node
+    private fun parseAssignStatement(): VnNode.AssignStatement {
+        val variable = advance()
+        if (variable is Token.Identifier) {
+            advance()
+            val expression = parseExpression()
+            return VnNode.AssignStatement(
+                variable = variable.value,
+                value = expression,
+                pos = SourcePos(
+                    line = variable.line,
+                    column = variable.col
                 )
-            } else {
-                blockContents.add(node)
+            )
+        }
+        throw RuntimeException(
+            "Error during assign statement parsing. Unexpected token: $variable")
+    }
+
+    private fun parseOperand(): Expression {
+        val token = advance()
+
+        val operand = when (token) {
+            is Token.OpenParenthesis ->  {
+                val expr = parseExpression()
+                val closeBracket = advance()
+                if (closeBracket !is Token.CloseParenthesis) {
+                    throw RuntimeException("Unclosed parenthesis: $token")
+                }
+                expr
             }
+
+            is Token.NotOperator -> {
+                val expr = parseExpression(UnaryExpression.NOT.bp)
+                Expression.UnaryOperator(
+                    expression = expr,
+                    operator = UnaryExpression.NOT,
+                    p = SourcePos(token.line, token.col)
+                )
+            }
+
+            is Token.Identifier -> Expression.Variable(
+                name = token.value,
+                p = SourcePos(
+                    line = token.line,
+                    column = token.col
+                )
+            )
+
+            is Token.StringLiteral -> Expression.StringLiteral(
+                value = token.value,
+                p = SourcePos(
+                    line = token.line,
+                    column = token.col
+                )
+            )
+
+            is Token.NumberLiteral -> Expression.NumberLiteral(
+                value = token.value,
+                p = SourcePos(
+                    line = token.line,
+                    column = token.col
+                )
+            )
+
+            is Token.BooleanLiteral -> Expression.BooleanLiteral(
+                value = token.value,
+                p = SourcePos(
+                    line = token.line,
+                    column = token.col
+                )
+            )
+
+            else -> throw RuntimeException("Unexpected type of literal: $token")
         }
 
-        advance()
+        return operand
+    }
 
-        return VnNode.Block(
-            name = blockName,
-            expressions = blockContents,
-            blocks = innerBlocks,
-            pos = blockPos
-        )
+    private fun peekOperator(): BinaryExpression? {
+        val token = peek() ?: return null
+        return operators[token::class]
+    }
+
+    // 1 + 2 * 3 - 4
+    // lE = 1; operator = +; false; consumed operator; sO = 2 * 3; lE = 1 + (2 * 3); operator = -; true; sO = 4; lE = (1 + (2 * 3)) - 4; returned lE
+    // lE = 2; operator = *; false; consumed operator; sO = 3; lE = 2 * 3; operator = -; false; returned 2 * 3;
+    // lE = 3; operator = -; true; returned 3;
+    private fun parseExpression(prevBindingPower: Int = 0): Expression {
+        var leftExpression = parseOperand()
+
+        while (true) {
+            val operator = peekOperator()
+            if (operator == null) break
+
+            if (operator.lbp < prevBindingPower) break
+
+            advance()
+            val secondOperand = parseExpression(operator.rbp)
+
+            leftExpression = Expression.BinaryOperator(
+                left = leftExpression,
+                right = secondOperand,
+                operator = operator,
+                p = leftExpression.pos
+            )
+        }
+
+        return leftExpression
     }
 
     private fun parseKeyword(): VnNode {
@@ -125,8 +194,207 @@ class Parser {
         return when (keyword.value) {
             "block" -> parseBlock()
             "execute" -> parseExecute()
+            "if" -> parseIf()
+            "else" -> throw RuntimeException("else keyword can't be on it's own")
+            "choice" -> parseChoice()
             else -> throw RuntimeException("Unexpected keyword: ${keyword.value}")
         }
+    }
+
+    private fun parseIf(): VnNode.IfStatement {
+        val branches = mutableListOf<VnNode.IfBranch>()
+        var elseBody: List<VnNode>? = null
+
+        branches.add(parseIfBranch())
+
+        var next = peek()
+        while (next is Token.Keyword && next.value == "else") {
+            advance() // Consumed else
+
+            val afterNext = peek()
+            if (afterNext is Token.Keyword && afterNext.value == "if") {
+                advance() // Consumed if
+                branches.add(parseIfBranch())
+            } else {
+                elseBody = parseBlockBody().first
+                break
+            }
+            next = peek()
+        }
+
+        executionBodyId++
+        return VnNode.IfStatement(
+            branches = branches,
+            elseBody = elseBody?.let { VnNode.ElseBranch(
+                id = executionBodyId,
+                body = elseBody
+            ) },
+            pos = branches.first().condition.pos
+        )
+    }
+
+    private fun parseIfBranch(): VnNode.IfBranch {
+        val condition = parseExpression()
+        val body = parseBlockBody()
+
+        executionBodyId++
+        return VnNode.IfBranch(
+            id = executionBodyId,
+            condition = condition,
+            body = body.first
+        )
+    }
+
+    private fun parseBlock(): VnNode.Block {
+        var token = advance()
+        if (!(token is Token.Keyword && token.value == "block")) {
+            throw RuntimeException("Every block must start with a \"block\" keyword")
+        }
+
+        token = advance()
+        if (token !is Token.Identifier) {
+            throw RuntimeException("\"block\" keyword must be followed with " +
+                    "a block name. Example: block empty_block {}")
+        }
+        val blockName = token.value
+        val blockPos = SourcePos(
+            line = token.line,
+            column = token.col
+        )
+
+        val blockBodyAndInnerBlocks = parseBlockBody(innerBlocksAllowed = true)
+        executionBodyId++
+        return VnNode.Block(
+            id = executionBodyId,
+            name = blockName,
+            body = blockBodyAndInnerBlocks.first,
+            blocks = blockBodyAndInnerBlocks.second,
+            pos = blockPos
+        )
+    }
+
+    private fun parseBlockBody(innerBlocksAllowed: Boolean = false):
+            Pair<List<VnNode>, MutableMap<String, VnNode.Block>> {
+        val innerBlocks: MutableMap<String, VnNode.Block> = mutableMapOf()
+
+        if (peek() !is Token.OpenBraces) {
+            throw RuntimeException("Expected \"{\"")
+        }
+        advance()
+
+        val body = mutableListOf<VnNode>()
+
+        var token = peek()
+        while (token !is Token.CloseBraces) {
+            if (token == null || token is Token.EOF) {
+                throw RuntimeException("Every block must end with " +
+                        "a close bracket. Example: block empty_block {}")
+            }
+
+            // Random numbers that don't fit anywhere become ignored statements for later warning
+            if (token is Token.NumberLiteral) {
+                body.add(VnNode.IgnoredStatement(
+                    value = token.value.toString(),
+                    pos = SourcePos(
+                        line = token.line,
+                        column = token.col
+                    )
+                ))
+                advance()
+                token = peek()
+                continue
+            }
+
+            // Random booleans that don't fit anywhere become ignored statements for later warning
+            if (token is Token.BooleanLiteral) {
+                body.add(VnNode.IgnoredStatement(
+                    value = token.value.toString(),
+                    pos = SourcePos(
+                        line = token.line,
+                        column = token.col
+                    )
+                ))
+                advance()
+                token = peek()
+                continue
+            }
+
+            val node = when (token) {
+                is Token.Keyword -> parseKeyword()
+                is Token.StringLiteral -> parseDialogue()
+                is Token.Identifier -> parseIdentifier()
+                is Token.OpenBraces -> throw RuntimeException("Unexpected open bracket encountered")
+                Token.EOF -> throw RuntimeException("Unexpected end of file encountered")
+                else -> throw RuntimeException("Unexpected token encountered: $token")
+            }
+
+            if (node is VnNode.Block) {
+                if (innerBlocksAllowed) {
+                    if (innerBlocks.containsKey(node.name)) {
+                        throw RuntimeException("Duplicate block: ${node.name}")
+                    }
+                    innerBlocks.put(
+                        key = node.name,
+                        value = node
+                    )
+                } else {
+                    throw RuntimeException("Blocks can't be defined inside conditionals")
+                }
+            } else {
+                body.add(node)
+            }
+
+            token = peek()
+        }
+
+        advance()
+        return Pair(body, innerBlocks)
+    }
+
+    private fun parseChoice(): VnNode.ChoiceStatement {
+        val choices: MutableList<VnNode.ChoiceOption> = mutableListOf()
+
+        val openBracket = advance()
+        if (openBracket !is Token.OpenBraces) {
+            throw RuntimeException("Choice keyword must be followed by an open bracket")
+        }
+
+        while (peek() is Token.StringLiteral) {
+            val label = advance()
+            var expression: Expression? = null
+            if (label !is Token.StringLiteral) {
+                throw RuntimeException("Every choice option must start with a StringLiteral")
+            }
+
+            if (peek() !is Token.OpenBraces) {
+                try {
+                    expression = parseExpression()
+                } catch (_: RuntimeException) {
+                    throw RuntimeException("Incorrect expression in choice block")
+                }
+            }
+
+            val body = parseBlockBody()
+
+            executionBodyId++
+            choices.add(VnNode.ChoiceOption(
+                id = executionBodyId,
+                expression = expression,
+                label = label.value,
+                body = body.first,
+                pos = SourcePos(line = label.line, column = label.col)
+            ))
+        }
+
+        val closeBracket = advance()
+        if (closeBracket !is Token.CloseBraces) {
+            throw RuntimeException("Choice keyword must end with a close bracket")
+        }
+
+        return VnNode.ChoiceStatement(
+            options = choices,
+            pos = choices.first().pos
+        )
     }
 
     private fun parseExecute(): VnNode.ExecuteStatement {

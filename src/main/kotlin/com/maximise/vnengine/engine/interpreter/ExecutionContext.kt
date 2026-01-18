@@ -1,26 +1,56 @@
 package com.maximise.vnengine.engine.interpreter
 
-import com.maximise.vnengine.engine.parser.SourcePos
 import com.maximise.vnengine.engine.parser.VnNode
 
 class ExecutionContext(
     val blocks: Map<String, VnNode.Block>
 ) {
+
     val stack: ArrayDeque<ExecutionFrame> = ArrayDeque()
+    val variables: MutableMap<String, Variable> = mutableMapOf()
+
+    /* fun toSaveSafeExecutionFrameStack(): ArrayDeque<Pair<Int, Int>> {
+        return // remove block from each ExecutionFrame
+    } */
 
     fun currentBlock(): VnNode.Block? {
-        if (!stack.isEmpty()) {
-            return stack.last().block
+        return if (!stack.isEmpty()) {
+            stack.last().block
         } else {
-            return null
+            null
         }
     }
 
+    fun setVariable(name: String, value: String) {
+        variables[name] = Variable(
+            name = name,
+            value = Value.Str(value)
+        )
+    }
+
+    fun setVariable(name: String, value: Double) {
+        variables[name] = Variable(
+            name = name,
+            value = Value.Num(value)
+        )
+    }
+
+    fun setVariable(name: String, value: Boolean) {
+        variables[name] = Variable(
+            name = name,
+            value = Value.Bool(value)
+        )
+    }
+
+    fun getVariable(name: String): Variable? {
+        return variables[name]
+    }
+
     fun currentIndex(): Int? {
-        if (!stack.isEmpty()) {
-            return stack.last().currentIndex
+        return if (!stack.isEmpty()) {
+            stack.last().currentIndex
         } else {
-            return null
+            null
         }
     }
 
@@ -29,9 +59,7 @@ class ExecutionContext(
             ExecutionFrame(
                 block = block,
                 currentIndex = index,
-                stringVariables = mutableMapOf(),
-                booleanVariables = mutableMapOf(),
-                numberVariables = mutableMapOf()
+                blockId = block.id
             )
         )
     }
@@ -43,7 +71,7 @@ class ExecutionContext(
             return
         }
 
-        while (stack.last().block.expressions.size <= stack.last().currentIndex + 1) {
+        while (stack.last().block.body.size <= stack.last().currentIndex + 1) {
             stack.removeLast()
 
             if (stack.isEmpty()) {
@@ -71,7 +99,7 @@ class ExecutionContext(
     }
 
     fun incrementIndex() {
-        if (currentBlock()!!.expressions.size - 1 > currentIndex()!!) {
+        if (currentBlock()!!.body.size - 1 > currentIndex()!!) {
             stack.last().currentIndex++
         } else {
             popBlock()

@@ -8,10 +8,16 @@ fun main() {
     val file = File("/home/smol/project/VNEngine/res/script_example.vn")
     val tokens = lexer.tokenize(file.readText())
 
+    //println(tokens)
+
     val parser = Parser()
     val ast = parser.parseProgram(tokens)
 
-    //println(ast)
+    for (block in ast.blocks) {
+        for (node in block.value.body) {
+            println(node)
+        }
+    }
 
     val interpreter = Interpreter()
     interpreter.run(ast)

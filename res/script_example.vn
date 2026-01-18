@@ -1,4 +1,8 @@
 block start { // Always beginning execution from "start" block
+    testString = "My_string"
+    testNumber = 1234
+    testBoolean = true
+    test = 10
     mc "..."
     mc ""Very long string. Newlines are replaced with spaces.
     Continuation of a very long string.""
@@ -9,4 +13,24 @@ block start { // Always beginning execution from "start" block
 
 block continuation {
     "This is some text."
+
+    choice {
+        "Option 1" test == 10 {
+            "Option 1 called"
+        }
+        "Option 2" {
+            "Option 2 called"
+        }
+        "Option 3" test == 120 {
+            "Option 3 called"
+        }
+    }
+
+    "More text"
+
+    if test == 10 {
+        "Test = 10"
+    } else {
+        "Test != 10"
+    }
 }
