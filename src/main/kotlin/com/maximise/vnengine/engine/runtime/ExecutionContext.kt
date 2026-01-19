@@ -1,6 +1,7 @@
-package com.maximise.vnengine.engine.interpreter
+package com.maximise.vnengine.engine.runtime
 
-import com.maximise.vnengine.engine.parser.VnNode
+import com.maximise.vnengine.engine.ast.Value
+import com.maximise.vnengine.engine.ast.VnNode
 
 class ExecutionContext(
     val blocks: Map<String, VnNode.Block>
@@ -8,10 +9,50 @@ class ExecutionContext(
 
     val stack: ArrayDeque<ExecutionFrame> = ArrayDeque()
     val variables: MutableMap<String, Variable> = mutableMapOf()
+    val seenDialogue: MutableMap<String, Short> = indexBlocksWithDialogue()
 
-    /* fun toSaveSafeExecutionFrameStack(): ArrayDeque<Pair<Int, Int>> {
-        return // remove block from each ExecutionFrame
-    } */
+    var currentBlockId: String = "" // TODO: remove this abomination. It's only used during seen dialogue checks.
+
+    fun isDialogueSeen(index: Short): Boolean
+        = seenDialogue[currentBlockId]!! > index
+
+    private fun indexBlocksWithDialogue(): MutableMap<String, Short> {
+        val indexes = mutableMapOf<String, Short>()
+        blocks.forEach { name, block ->
+            indexes.putAll(mapBlock(block))
+        }
+        return indexes
+    }
+
+    private fun mapBlock(block: VnNode.Block): MutableMap<String, Short> {
+        val indexes = mutableMapOf<String, Short>()
+        block.blocks.forEach { name, block ->
+            indexes.putAll(mapBlock(block))
+        }
+
+        block.body.forEach { node ->
+            when (node) {
+                is VnNode.IfStatement -> {
+                    node.branches.forEach { branch ->
+                        indexes.put(branch.assignedId ?: branch.id!!, 0)
+                    }
+                    if (node.elseBody != null) {
+                        indexes.put(node.elseBody.assignedId ?: node.elseBody.id!!, 0)
+                    }
+                }
+                is VnNode.ChoiceStatement -> {
+                    node.options.forEach { option ->
+                        indexes.put(option.assignedId ?: option.id!!, 0)
+                    }
+                }
+                else -> {}
+            }
+        }
+
+        indexes.put(block.id ?: block.assignedId!!, 0)
+
+        return indexes
+    }
 
     fun currentBlock(): VnNode.Block? {
         return if (!stack.isEmpty()) {
@@ -59,7 +100,7 @@ class ExecutionContext(
             ExecutionFrame(
                 block = block,
                 currentIndex = index,
-                blockId = block.id
+                blockHash = block.id!!
             )
         )
     }
@@ -98,33 +139,20 @@ class ExecutionContext(
         return null
     }
 
-    fun incrementIndex() {
-        if (currentBlock()!!.body.size - 1 > currentIndex()!!) {
+    fun incrementIndex(
+        dialogueIndex: Short = 0
+    ) {
+        val block = currentBlock()!!
+        val blockId = block.assignedId ?: block.id!!
+        currentBlockId = blockId
+        if (seenDialogue[blockId]!! < dialogueIndex) {
+            seenDialogue[blockId] = dialogueIndex
+        }
+
+        if (block.body.size - 1 > currentIndex()!!) {
             stack.last().currentIndex++
         } else {
             popBlock()
         }
     }
-
-    /*fun moveIndex(i: Int) {
-        val currentBlock = stack.last()
-
-        if (currentBlock.currentIndex + i < 0) {
-            var currentBlockIndex = stack.size - 1
-            var currentI = i + currentBlock.currentIndex + 1
-
-            while (stack[currentBlockIndex].currentIndex + currentI < 0) {
-                stack.removeLast()
-                currentI = currentI + stack[currentBlockIndex].currentIndex + 1
-                currentBlockIndex--
-
-                if (currentBlockIndex < 0) {
-                    currentI = 0
-                    break
-                }
-            }
-
-            stack.last().currentIndex = 0
-        }
-    }*/
 }

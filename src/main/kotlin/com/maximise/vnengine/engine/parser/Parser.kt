@@ -1,5 +1,10 @@
 package com.maximise.vnengine.engine.parser
 
+import com.maximise.vnengine.engine.ast.BinaryExpression
+import com.maximise.vnengine.engine.ast.Expression
+import com.maximise.vnengine.engine.ast.SourcePos
+import com.maximise.vnengine.engine.ast.UnaryExpression
+import com.maximise.vnengine.engine.ast.VnNode
 import com.maximise.vnengine.engine.lexer.Token
 import kotlin.reflect.KClass
 import kotlin.to
@@ -21,10 +26,10 @@ class Parser {
         Token.MulOperator::class to BinaryExpression.MUL,
         Token.PowOperator::class to BinaryExpression.POW
     )
+    private val indexer: Indexer = Indexer()
 
     private var cursor: Int = 0
     private var tokens: List<Token> = listOf()
-    private var executionBodyId: Int = 0
 
     private fun peek(offset: Int = 0): Token? {
         return if (tokens.size <= cursor + offset) {
@@ -47,10 +52,8 @@ class Parser {
 
     fun parseProgram(inputTokens: List<Token>): VnNode.Program {
         cursor = 0
-        executionBodyId = 0
         tokens = inputTokens
         val blocks = mutableMapOf<String, VnNode.Block>()
-        val executionBodies = mutableMapOf<Int, List<VnNode>>()
 
         while (peek() != null && peek() != Token.EOF) {
             val block = parseBlock()
@@ -60,10 +63,10 @@ class Parser {
             blocks.put(key = block.name, value = block)
         }
 
-        return VnNode.Program(
-            blocks = blocks,
-            executionBodies = executionBodies
-        )
+        return indexer.indexProgram(
+            VnNode.Program(
+            blocks = blocks
+        ))
     }
 
     private fun parseIdentifier(): VnNode {
@@ -205,7 +208,10 @@ class Parser {
         val branches = mutableListOf<VnNode.IfBranch>()
         var elseBody: List<VnNode>? = null
 
-        branches.add(parseIfBranch())
+        branches.add(parseIfBranch(
+
+        ))
+
 
         var next = peek()
         while (next is Token.Keyword && next.value == "else") {
@@ -222,11 +228,11 @@ class Parser {
             next = peek()
         }
 
-        executionBodyId++
         return VnNode.IfStatement(
             branches = branches,
             elseBody = elseBody?.let { VnNode.ElseBranch(
-                id = executionBodyId,
+                id = null,
+                assignedId = null,
                 body = elseBody
             ) },
             pos = branches.first().condition.pos
@@ -237,9 +243,9 @@ class Parser {
         val condition = parseExpression()
         val body = parseBlockBody()
 
-        executionBodyId++
         return VnNode.IfBranch(
-            id = executionBodyId,
+            id = null,
+            assignedId = null,
             condition = condition,
             body = body.first
         )
@@ -263,9 +269,10 @@ class Parser {
         )
 
         val blockBodyAndInnerBlocks = parseBlockBody(innerBlocksAllowed = true)
-        executionBodyId++
+
         return VnNode.Block(
-            id = executionBodyId,
+            id = null,
+            assignedId = null,
             name = blockName,
             body = blockBodyAndInnerBlocks.first,
             blocks = blockBodyAndInnerBlocks.second,
@@ -273,8 +280,9 @@ class Parser {
         )
     }
 
-    private fun parseBlockBody(innerBlocksAllowed: Boolean = false):
-            Pair<List<VnNode>, MutableMap<String, VnNode.Block>> {
+    private fun parseBlockBody(
+        innerBlocksAllowed: Boolean = false
+    ): Pair<List<VnNode>, MutableMap<String, VnNode.Block>> {
         val innerBlocks: MutableMap<String, VnNode.Block> = mutableMapOf()
 
         if (peek() !is Token.OpenBraces) {
@@ -293,7 +301,8 @@ class Parser {
 
             // Random numbers that don't fit anywhere become ignored statements for later warning
             if (token is Token.NumberLiteral) {
-                body.add(VnNode.IgnoredStatement(
+                body.add(
+                    VnNode.IgnoredStatement(
                     value = token.value.toString(),
                     pos = SourcePos(
                         line = token.line,
@@ -307,7 +316,8 @@ class Parser {
 
             // Random booleans that don't fit anywhere become ignored statements for later warning
             if (token is Token.BooleanLiteral) {
-                body.add(VnNode.IgnoredStatement(
+                body.add(
+                    VnNode.IgnoredStatement(
                     value = token.value.toString(),
                     pos = SourcePos(
                         line = token.line,
@@ -376,9 +386,10 @@ class Parser {
 
             val body = parseBlockBody()
 
-            executionBodyId++
-            choices.add(VnNode.ChoiceOption(
-                id = executionBodyId,
+            choices.add(
+                VnNode.ChoiceOption(
+                id = null,
+                assignedId = null,
                 expression = expression,
                 label = label.value,
                 body = body.first,
@@ -420,6 +431,7 @@ class Parser {
             return VnNode.Dialogue(
                 text = node.value,
                 speaker = null,
+                blockIndex = null,
                 pos = SourcePos(
                     line = node.line,
                     column = node.col
@@ -433,6 +445,7 @@ class Parser {
                 return VnNode.Dialogue(
                     text = text.value,
                     speaker = node.value,
+                    blockIndex = null,
                     pos = SourcePos(
                         line = node.line,
                         column = node.col

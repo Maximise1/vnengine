@@ -25,9 +25,10 @@ End goal: run a simple VN script with new features from a terminal.
 
 ### Phase 3 - In Development
 
-1. Save current execution state.
-2. Add loading state function.
-3. track seen lines/seen choices.
+1. Implement persistence.
+2. Save current execution state.
+3. Add loading state function.
+4. track seen lines/seen choices.
 
 **End goal:**
 Fully playable VN from the terminal with save/load and history support.
@@ -42,7 +43,10 @@ Run VN in a window and be happy.
 
 ## Future goals
 
-1. Compile script into bytecode and execute it line-by-line.
-2. Display error log and not crash, display error after compilation.
-3. Make GUI customizable.
-4. Embed Lua as a scripting language for writing VN logic.
+1. Add rollback function
+2. Compile script into bytecode and execute it line-by-line. 
+3. Display error log and not crash, display error after compilation. 
+4. Make GUI customizable. 
+5. Embed Lua as a scripting language for writing VN logic. 
+6. Add assignId support (each block can be marked with a unique id to ensure forward compatibility and simplify save transfer between versions). 
+7. Add proper save transfer between versions (add export save button when game ends; it should basically compress ast and current global state into a huge blob, then the next game version should load previous ast and map each dialogue line).

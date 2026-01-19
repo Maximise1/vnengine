@@ -1,13 +1,20 @@
-package com.maximise.vnengine.engine.interpreter
+package com.maximise.vnengine.engine.runtime
 
-import com.maximise.vnengine.engine.parser.Expression
-import com.maximise.vnengine.engine.parser.VnNode
+import com.maximise.vnengine.engine.ast.Expression
+import com.maximise.vnengine.engine.ast.Value
+import com.maximise.vnengine.engine.ast.VnNode
+import com.maximise.vnengine.engine.ast.asBool
+import com.maximise.vnengine.engine.runtime.ExecutionContext
 
 class Interpreter {
 
-    private var context = ExecutionContext(
+    var context = ExecutionContext(
         blocks = mutableMapOf(),
     )
+
+    private var currentDialogue: VnNode.Dialogue? = null
+    private var currentChoice: VnNode.ChoiceStatement? = null
+    private var isFinished = false
 
     fun run(program: VnNode.Program) {
         context = ExecutionContext(
@@ -15,12 +22,8 @@ class Interpreter {
         )
 
         val startBlock = context.findBlock("start")
-        if (startBlock == null) {
-            throw RuntimeException("Program must contain \"start\" block to begin execution")
-        }
+            ?: throw RuntimeException("Program must contain \"start\" block")
         context.pushBlock(startBlock)
-
-        runProgram()
     }
 
     private fun runProgram() {
@@ -29,18 +32,67 @@ class Interpreter {
         }
     }
 
-    private fun advance() {
+    fun advance(): ExecutionState {
+        if (isFinished) return ExecutionState.Finished
+
+        if (context.stack.isEmpty()) {
+            isFinished = true
+            return ExecutionState.Finished
+        }
+
         val node = context.currentBlock()!!.body[context.currentIndex()!!]
 
-        when (node) {
-            is VnNode.Dialogue -> executeDialogue(node)
-            is VnNode.ExecuteStatement -> executeBlock(node.targetBlock)
-            is VnNode.IgnoredStatement -> executeIgnoredStatement(node)
-            is VnNode.AssignStatement -> executeAssignStatement(node)
-            is VnNode.ChoiceStatement -> executeChoiceStatement(node)
-            is VnNode.IfStatement -> executeIfStatement(node)
+        return when (node) {
+            is VnNode.Dialogue -> {
+                currentDialogue = node
+                context.incrementIndex()
+                ExecutionState.ShowDialogue(node)
+            }
+            is VnNode.ExecuteStatement -> {
+                executeBlock(node.targetBlock)
+                advance()
+            }
+            is VnNode.IgnoredStatement -> {
+                executeIgnoredStatement(node)
+                advance()
+            }
+            is VnNode.AssignStatement -> {
+                executeAssignStatement(node)
+                advance()
+            }
+            is VnNode.ChoiceStatement -> {
+                currentChoice = node
+                ExecutionState.ShowChoice(node)
+            }
+            is VnNode.IfStatement -> {
+                executeIfStatement(node)
+                advance()
+            }
             else -> throw RuntimeException("Unexpected VnNode encountered: $node")
         }
+    }
+
+    fun selectChoice(index: Int) {
+        val choice = currentChoice
+            ?: throw IllegalStateException("No active choice")
+
+        if (index < 0 || index >= choice.options.size) {
+            throw IllegalArgumentException("Invalid choice index")
+        }
+
+        context.pushBlock(
+            block = VnNode.Block(
+                name = "",
+                body = choice.options[index].body,
+                blocks = mapOf(),
+                pos = choice.options[index].pos,
+                id = choice.options[index].id,
+                assignedId = choice.options[index].assignedId
+            ),
+            index = 0
+        )
+
+        currentChoice = null
     }
 
     // All variables are global, type is not enforced
@@ -71,7 +123,7 @@ class Interpreter {
         context.incrementIndex()
     }
 
-    private fun evaluateExpression(expression: Expression): Value {
+    fun evaluateExpression(expression: Expression): Value {
         val result = when (expression) {
             is Expression.BinaryOperator -> {
                 val leftValue = evaluateExpression(expression.left)
@@ -123,7 +175,8 @@ class Interpreter {
                 body = choiceStatement.options[index].body,
                 blocks = mapOf(),
                 pos = choiceStatement.options[index].pos,
-                id = choiceStatement.options[index].id
+                id = choiceStatement.options[index].id,
+                assignedId = choiceStatement.options[index].assignedId
             ),
             index = 0
         )
@@ -141,7 +194,8 @@ class Interpreter {
                         name = "",
                         body = ifStatement.branches[i].body,
                         blocks = mapOf(),
-                        pos = ifStatement.pos
+                        pos = ifStatement.pos,
+                        assignedId = ifStatement.branches[i].assignedId
                     ),
                     index = 0
                 )
@@ -156,7 +210,8 @@ class Interpreter {
                     name = "",
                     body = ifStatement.elseBody.body,
                     blocks = mapOf(),
-                    pos = ifStatement.pos
+                    pos = ifStatement.pos,
+                    assignedId = ifStatement.elseBody.assignedId
                 ),
                 index = 0
             )

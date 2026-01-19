@@ -1,19 +1,21 @@
-package com.maximise.vnengine.engine.parser
+package com.maximise.vnengine.engine.ast
 
-import com.maximise.vnengine.engine.interpreter.Value
-import com.maximise.vnengine.engine.interpreter.asBool
-import com.maximise.vnengine.engine.interpreter.asNumber
-import com.maximise.vnengine.engine.lexer.Token
 import kotlin.math.pow
 
 sealed class VnNode(pos: SourcePos) {
     data class Program(
-        val blocks: Map<String, Block>,
-        val executionBodies: Map<Int, List<VnNode>>
+        val blocks: Map<String, Block>
     )
 
     data class Block(
-        val id: Int,
+        /**
+         * Basically a unique path to the block that's formed by the Indexer after parsing
+         */
+        var id: String?,
+        /**
+         * A unique user-defined identifier made to simplify global state restoration during save export
+         */
+        val assignedId: String?,
         val name: String,
         val body: List<VnNode>,
         val blocks: Map<String, Block>,
@@ -21,6 +23,10 @@ sealed class VnNode(pos: SourcePos) {
     ) : VnNode(pos)
 
     data class Dialogue(
+        /**
+         * Dialogue's index inside block
+         */
+        var blockIndex: Short?,
         val text: String,
         val speaker: String?,
         val pos: SourcePos
@@ -48,18 +54,21 @@ sealed class VnNode(pos: SourcePos) {
     ) : VnNode(pos)
 
     data class IfBranch(
-        val id: Int,
+        var id: String?,
+        val assignedId: String?,
         val condition: Expression,
         val body: List<VnNode>
     )
 
     data class ElseBranch(
-        val id: Int,
+        var id: String?,
+        val assignedId: String?,
         val body: List<VnNode>
     )
 
     data class ChoiceOption(
-        val id: Int,
+        var id: String?,
+        val assignedId: String?,
         val expression: Expression?,
         val label: String,
         val body: List<VnNode>,

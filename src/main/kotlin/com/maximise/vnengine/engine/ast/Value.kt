@@ -1,4 +1,4 @@
-package com.maximise.vnengine.engine.interpreter
+package com.maximise.vnengine.engine.ast
 
 sealed interface Value {
     data class Str(val v: String) : Value

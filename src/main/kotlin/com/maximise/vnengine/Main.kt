@@ -1,6 +1,7 @@
-import com.maximise.vnengine.engine.interpreter.Interpreter
+import com.maximise.vnengine.engine.runtime.Interpreter
 import com.maximise.vnengine.engine.lexer.Lexer
 import com.maximise.vnengine.engine.parser.Parser
+import com.maximise.vnengine.engine.ui.ConsoleInterface
 import java.io.File
 
 fun main() {
@@ -13,12 +14,12 @@ fun main() {
     val parser = Parser()
     val ast = parser.parseProgram(tokens)
 
-    for (block in ast.blocks) {
+    /*for (block in ast.blocks) {
         for (node in block.value.body) {
             println(node)
         }
-    }
+    }*/
 
-    val interpreter = Interpreter()
-    interpreter.run(ast)
+    val console = ConsoleInterface()
+    console.run(ast)
 }
