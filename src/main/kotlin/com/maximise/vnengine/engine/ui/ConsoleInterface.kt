@@ -2,14 +2,35 @@ package com.maximise.vnengine.engine.ui
 
 import com.maximise.vnengine.engine.ast.VnNode
 import com.maximise.vnengine.engine.ast.asBool
+import com.maximise.vnengine.engine.persistence.PersistentDataHandler
+import com.maximise.vnengine.engine.persistence.SaveHandler
 import com.maximise.vnengine.engine.runtime.ExecutionState
 import com.maximise.vnengine.engine.runtime.Interpreter
 
-class ConsoleInterface {
-    val interpreter = Interpreter()
+class ConsoleInterface(
+    val interpreter: Interpreter,
+    val saveHandler: SaveHandler,
+    val persistentDataHandler: PersistentDataHandler
+) {
 
-    fun run(program: VnNode.Program) {
-        interpreter.run(program)
+    fun run(
+        program: VnNode.Program,
+        saveName: String?
+    ) {
+        val (stack, vars) = if (saveName != null) {
+            saveHandler.loadSave(saveName)
+        } else {
+            Pair(listOf(), mutableMapOf())
+        }
+
+
+        interpreter.run(
+            program = program,
+            persistentDialogue = persistentDataHandler.getSeenDialogue(),
+            savedStack = stack,
+            savedVariables = vars,
+            persistentValues = persistentDataHandler.getVariables()
+        )
         gameLoop()
     }
 

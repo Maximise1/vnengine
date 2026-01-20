@@ -9,7 +9,9 @@ import com.maximise.vnengine.engine.lexer.Token
 import kotlin.reflect.KClass
 import kotlin.to
 
-class Parser {
+class Parser(
+    private val indexer: Indexer
+) {
 
     private val operators: Map<KClass<out Token>, BinaryExpression> = mapOf(
         Token.EqualsOperator::class to BinaryExpression.EQUAL,
@@ -26,7 +28,6 @@ class Parser {
         Token.MulOperator::class to BinaryExpression.MUL,
         Token.PowOperator::class to BinaryExpression.POW
     )
-    private val indexer: Indexer = Indexer()
 
     private var cursor: Int = 0
     private var tokens: List<Token> = listOf()

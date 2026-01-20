@@ -29,6 +29,7 @@ End goal: run a simple VN script with new features from a terminal.
 2. Save current execution state.
 3. Add loading state function.
 4. track seen lines/seen choices.
+5. Add save/load commands into console interface (update persistence when save happens).
 
 **End goal:**
 Fully playable VN from the terminal with save/load and history support.

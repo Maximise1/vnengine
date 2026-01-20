@@ -4,21 +4,36 @@ import com.maximise.vnengine.engine.ast.Expression
 import com.maximise.vnengine.engine.ast.Value
 import com.maximise.vnengine.engine.ast.VnNode
 import com.maximise.vnengine.engine.ast.asBool
+import com.maximise.vnengine.engine.persistence.PersistentDataHandler
 import com.maximise.vnengine.engine.runtime.ExecutionContext
 
-class Interpreter {
+class Interpreter() {
 
     var context = ExecutionContext(
         blocks = mutableMapOf(),
+        dialogue = mutableMapOf(),
+        savedStack = ArrayDeque(),
+        savedVariables = mutableMapOf(),
+        persistentVals = mutableMapOf(),
     )
 
     private var currentDialogue: VnNode.Dialogue? = null
     private var currentChoice: VnNode.ChoiceStatement? = null
     private var isFinished = false
 
-    fun run(program: VnNode.Program) {
+    fun run(
+        program: VnNode.Program,
+        persistentDialogue: MutableMap<String, Short>,
+        savedStack: List<Pair<String, Int>>,
+        savedVariables: MutableMap<String, Value>,
+        persistentValues: MutableMap<String, Value>
+    ) {
         context = ExecutionContext(
-            blocks = program.blocks
+            blocks = program.blocks,
+            dialogue = persistentDialogue,
+            savedStack = savedStack,
+            savedVariables = savedVariables,
+            persistentVals = persistentValues,
         )
 
         val startBlock = context.findBlock("start")
@@ -142,7 +157,7 @@ class Interpreter {
                 if (variable == null) {
                     throw RuntimeException("Undefined variable ${expression.name} was used")
                 }
-                variable.value
+                variable
             }
         }
         return result
