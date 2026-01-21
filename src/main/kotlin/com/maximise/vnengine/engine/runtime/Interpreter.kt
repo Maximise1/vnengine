@@ -36,14 +36,10 @@ class Interpreter() {
             persistentVals = persistentValues,
         )
 
-        val startBlock = context.findBlock("start")
-            ?: throw RuntimeException("Program must contain \"start\" block")
-        context.pushBlock(startBlock)
-    }
-
-    private fun runProgram() {
-        while (!context.stack.isEmpty()) {
-            advance()
+        if (savedStack.isEmpty()) {
+            val startBlock = context.findBlock("start")
+                ?: throw RuntimeException("Program must contain \"start\" block")
+            context.pushBlock(startBlock)
         }
     }
 

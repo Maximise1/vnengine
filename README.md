@@ -21,20 +21,20 @@ Run a simple VN script from a terminal.
 1. Add choices, conditions, and variables.
 2. Implement a VN execution loop.
 
-End goal: run a simple VN script with new features from a terminal.
+**End goal:** run a simple VN script with new features from a terminal.
 
-### Phase 3 - In Development
+### Phase 3 - Finished
 
 1. Implement persistence.
 2. Save current execution state.
 3. Add loading state function.
-4. track seen lines/seen choices.
+4. Track seen lines/seen choices.
 5. Add save/load commands into console interface (update persistence when save happens).
 
 **End goal:**
 Fully playable VN from the terminal with save/load and history support.
 
-### Phase 4
+### Phase 4 - In Development
 
 1. Add non-customizable GUI with one window, one background, etc...
 2. Write tests for all crucial methods of all classes.

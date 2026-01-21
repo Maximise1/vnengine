@@ -20,6 +20,15 @@ block continuation {
         }
         "Option 2" {
             "Option 2 called"
+            "More text1"
+            if test == 10 {
+                "Text inside if"
+                "Text inside if1"
+                "Text inside if2"
+                "Text inside if3"
+            }
+            "More text2"
+            "More text3"
         }
         "Option 3" test == 120 {
             "Option 3 called"
@@ -27,6 +36,10 @@ block continuation {
     }
 
     "More text"
+    "More text10"
+    "More text11"
+    "More text12"
+    "More text13"
 
     if test == 10 {
         "Test = 10"

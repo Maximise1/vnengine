@@ -91,6 +91,12 @@ class SaveHandler {
         return current
     }
 
+    fun listSaves(): List<String> {
+        return File(SAVE_DIR).listFiles().map { file ->
+            file.name
+        }
+    }
+
     fun makeSave(
         name: String?,
         stack: ArrayDeque<ExecutionFrame>,

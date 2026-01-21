@@ -1,83 +1,68 @@
 package com.maximise.vnengine.engine.ui
 
 import com.maximise.vnengine.engine.ast.VnNode
-import com.maximise.vnengine.engine.ast.asBool
-import com.maximise.vnengine.engine.persistence.PersistentDataHandler
-import com.maximise.vnengine.engine.persistence.SaveHandler
-import com.maximise.vnengine.engine.runtime.ExecutionState
-import com.maximise.vnengine.engine.runtime.Interpreter
+import com.maximise.vnengine.engine.engine.GameEngine
+import com.maximise.vnengine.engine.engine.GameState
 
 class ConsoleInterface(
-    val interpreter: Interpreter,
-    val saveHandler: SaveHandler,
-    val persistentDataHandler: PersistentDataHandler
+    private val gameEngine: GameEngine
 ) {
 
-    fun run(
-        program: VnNode.Program,
-        saveName: String?
-    ) {
-        val (stack, vars) = if (saveName != null) {
-            saveHandler.loadSave(saveName)
-        } else {
-            Pair(listOf(), mutableMapOf())
+    fun run(program: VnNode.Program, saveName: String? = null) {
+        gameEngine.addStateListener { state ->
+            handleState(state)
         }
 
-
-        interpreter.run(
-            program = program,
-            persistentDialogue = persistentDataHandler.getSeenDialogue(),
-            savedStack = stack,
-            savedVariables = vars,
-            persistentValues = persistentDataHandler.getVariables()
-        )
-        gameLoop()
+        gameEngine.start(program, saveName)
     }
 
-    private fun gameLoop() {
-        while (true) {
-            when (val state = interpreter.advance()) {
-                is ExecutionState.ShowDialogue -> {
-                    displayDialogue(state.dialogue)
-                    waitForInput()
-                }
-                is ExecutionState.ShowChoice -> {
-                    val choice = getUserChoice(state.choiceStatement)
-                    interpreter.selectChoice(choice)
-                }
-                is ExecutionState.Finished -> {
-                    println("The end.")
-                    break
-                }
+    private fun handleState(state: GameState) {
+        when (state) {
+            is GameState.Dialogue -> {
+                displayDialogue(state)
+                waitForInput()
+            }
+            is GameState.Choice -> {
+                val choice = getUserChoice(state)
+                gameEngine.selectChoice(choice)
+            }
+            is GameState.Finished -> {
+                println("The end.")
             }
         }
     }
 
-    private fun displayDialogue(dialogue: VnNode.Dialogue) {
+    private fun displayDialogue(dialogue: GameState.Dialogue) {
         val speaker = dialogue.speaker ?: ""
-        val isSeen = interpreter.context.isDialogueSeen(dialogue.blockIndex!!)
-
-        val prefix = if (isSeen) "[SEEN] " else ""
+        val prefix = if (dialogue.isSeen) "[SEEN] " else ""
         println("$prefix$speaker: ${dialogue.text}")
     }
 
     private fun waitForInput() {
-        readln()
+        while (true) {
+            val command = readln().split(" ")
+            when (command[0]) {
+                "" -> return
+                "save" -> gameEngine.save()
+                "list" -> gameEngine.listSaves().forEach { println(it) }
+                "load" -> {
+                    gameEngine.load(command[1])
+                    return
+                }
+            }
+        }
     }
 
-    private fun getUserChoice(choice: VnNode.ChoiceStatement): Int {
-        choice.options.forEachIndexed { index, option ->
-            if (option.expression == null ||
-                interpreter.evaluateExpression(option.expression).asBool()) {
-                println("$index: ${option.label}")
-            }
+    private fun getUserChoice(choice: GameState.Choice): Int {
+        choice.options.forEach { option ->
+            println("${option.index}: ${option.label}")
         }
 
         while (true) {
             try {
                 print("Choose: ")
                 val input = readLine()?.toInt() ?: continue
-                if (input >= 0 && input < choice.options.size) {
+                if (choice.options.any { it.index == input }) {
                     return input
                 }
             } catch (e: Exception) {

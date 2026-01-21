@@ -1,5 +1,6 @@
 package com.maximise.vnengine.engine.di
 
+import com.maximise.vnengine.engine.engine.GameEngine
 import com.maximise.vnengine.engine.lexer.Lexer
 import com.maximise.vnengine.engine.parser.Indexer
 import com.maximise.vnengine.engine.parser.Parser
@@ -33,11 +34,15 @@ class Container {
         Lexer()
     }
 
-    val consoleUI: ConsoleInterface by lazy {
-        ConsoleInterface(
-            interpreter,
-            saveHandler,
-            persistentDataHandler
+    val gameEngine: GameEngine by lazy {
+        GameEngine(
+            interpreter = interpreter,
+            saveHandler = saveHandler,
+            persistentDataHandler = persistentDataHandler
         )
+    }
+
+    val consoleUI: ConsoleInterface by lazy {
+        ConsoleInterface(gameEngine)
     }
 }
