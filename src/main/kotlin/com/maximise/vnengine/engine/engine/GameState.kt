@@ -1,8 +1,11 @@
 package com.maximise.vnengine.engine.engine
 
-import com.maximise.vnengine.engine.ast.VnNode
-
 sealed class GameState {
+    data class ShowScreen(
+        val screenName: String,
+        val data: Map<String, Any>
+    ) : GameState()
+
     data class Dialogue(
         val speaker: String?,
         val text: String,

@@ -1,0 +1,236 @@
+<div class="game-screen" data-action="advance_dialogue">
+    <!-- Background overlay for visual novel atmosphere -->
+    <div class="vn-overlay"></div>
+
+    <!-- Top menu bar - styled like Ren'Py's quick menu -->
+    <div class="quick-menu">
+        <button class="quick-btn" data-action="save">Save</button>
+        <button class="quick-btn" data-action="load">Load</button>
+        <button class="quick-btn" data-action="auto">Auto</button>
+        <button class="quick-btn" data-action="skip">Skip</button>
+        <button class="quick-btn" data-action="open_menu">Menu</button>
+    </div>
+
+    <!-- Dialogue textbox - classic Ren'Py style -->
+    <div class="textbox-container">
+        <div class="textbox">
+            {{#if speaker}}
+            <div class="namebox">
+                <span class="namebox-text">{{speaker}}</span>
+            </div>
+            {{/if}}
+
+            <div class="dialogue-content">
+                <p class="dialogue-text">{{text}}</p>
+            </div>
+
+            <!-- Advance indicator -->
+            <div class="advance-indicator">▼</div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .game-screen {
+        position: relative;
+        width: 100%;
+        height: 100vh;
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        overflow: hidden;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    .vn-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: radial-gradient(ellipse at center, transparent 0%, rgba(0,0,0,0.3) 100%);
+        pointer-events: none;
+    }
+
+    /* Quick Menu - Ren'Py style */
+    .quick-menu {
+        position: absolute;
+        top: 20px;
+        right: 20px;
+        display: flex;
+        gap: 10px;
+        z-index: 100;
+    }
+
+    .quick-btn {
+        background: rgba(0, 0, 0, 0.7);
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        color: #fff;
+        padding: 8px 16px;
+        border-radius: 4px;
+        font-size: 14px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-weight: 500;
+    }
+
+    .quick-btn:hover {
+        background: rgba(30, 30, 50, 0.9);
+        border-color: rgba(255, 255, 255, 0.6);
+        transform: translateY(-2px);
+    }
+
+    .quick-btn:active {
+        transform: translateY(0);
+    }
+
+    .btn-icon {
+        font-size: 16px;
+    }
+
+    /* Textbox Container - Bottom aligned like Ren'Py */
+    .textbox-container {
+        position: absolute;
+        bottom: 40px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 90%;
+        max-width: 1000px;
+        z-index: 50;
+    }
+
+    /* Main Textbox - Classic VN style */
+    .textbox {
+        position: relative;
+        background: linear-gradient(to bottom,
+            rgba(0, 0, 0, 0.85) 0%,
+            rgba(0, 0, 0, 0.9) 100%);
+        border: 3px solid rgba(255, 255, 255, 0.15);
+        border-radius: 8px;
+        padding: 25px 35px 30px 35px;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+        backdrop-filter: blur(10px);
+    }
+
+    /* Namebox - Character name display */
+    .namebox {
+        position: absolute;
+        top: -35px;
+        left: 30px;
+        background: linear-gradient(135deg, #e94560 0%, #c72c48 100%);
+        border: 3px solid rgba(255, 255, 255, 0.2);
+        border-radius: 6px 6px 0 0;
+        padding: 8px 25px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+    }
+
+    .namebox-text {
+        color: #fff;
+        font-size: 18px;
+        font-weight: 700;
+        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+        letter-spacing: 0.5px;
+    }
+
+    /* Dialogue Content */
+    .dialogue-content {
+        min-height: 80px;
+        display: flex;
+        align-items: center;
+    }
+
+    .dialogue-text {
+        color: #ffffff;
+        font-size: 20px;
+        line-height: 1.6;
+        margin: 0;
+        text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+        letter-spacing: 0.3px;
+    }
+
+    /* Advance Indicator - Animated arrow */
+    .advance-indicator {
+        position: absolute;
+        bottom: 10px;
+        right: 20px;
+        color: rgba(255, 255, 255, 0.7);
+        font-size: 18px;
+        animation: bounce 1s ease-in-out infinite;
+    }
+
+    @keyframes bounce {
+        0%, 100% {
+            transform: translateY(0);
+            opacity: 0.7;
+        }
+        50% {
+            transform: translateY(-5px);
+            opacity: 1;
+        }
+    }
+
+    /* Seen dialogue indicator - slightly dimmed */
+    .textbox.seen .dialogue-text {
+        color: #b8b8b8;
+    }
+
+    .textbox.seen .namebox {
+        background: linear-gradient(135deg, #7a7a7a 0%, #5a5a5a 100%);
+    }
+
+    /* Responsive adjustments */
+    @media (max-width: 768px) {
+        .quick-menu {
+            top: 10px;
+            right: 10px;
+            gap: 5px;
+        }
+
+        .quick-btn {
+            padding: 6px 10px;
+            font-size: 12px;
+        }
+
+        .textbox-container {
+            width: 95%;
+            bottom: 20px;
+        }
+
+        .textbox {
+            padding: 20px 25px;
+        }
+
+        .dialogue-text {
+            font-size: 16px;
+        }
+
+        .namebox-text {
+            font-size: 16px;
+        }
+    }
+</style>
+
+<script>
+    // Handle button clicks
+    document.querySelectorAll('.quick-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const action = this.getAttribute('data-action');
+            // Call your Lua/backend function
+            window.cefQuery({
+                request: action,
+                onSuccess: function(response) {},
+                onFailure: function(error_code, error_message) {}
+            });
+        });
+    });
+
+    // Click anywhere on textbox to advance
+    document.querySelector('.textbox')?.addEventListener('click', function() {
+        window.cefQuery({
+            request: 'advance_dialogue',
+            onSuccess: function(response) {},
+            onFailure: function(error_code, error_message) {}
+        });
+    });
+</script>

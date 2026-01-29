@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: Arial, sans-serif;
+            background: #000;
+            color: white;
+            overflow: hidden;
+        }
+        #screen-container {
+            width: 100vw;
+            height: 100vh;
+        }
+    </style>
+</head>
+<div id="screen-container"></div>
+
+<script>
+    window.bridge = {
+        callLua: function(functionName, ...args) {
+            const request = functionName + ':' + args.join(',');
+            window.cefQuery({
+                request: request,
+                onSuccess: function(response) {
+                    console.log('Lua call succeeded:', response);
+                },
+                onFailure: function(error_code, error_message) {
+                    console.error('Lua call failed:', error_message);
+                }
+            });
+        }
+    };
+
+    document.addEventListener('click', function(e) {
+        const button = e.target.closest('[data-action]');
+
+        if (button) {
+            const action = button.getAttribute('data-action');
+            const argsStr = button.getAttribute('data-args');
+
+            if (argsStr) {
+                try {
+                    const args = JSON.parse(argsStr);
+                    window.bridge.callLua(action, ...args);
+                } catch (err) {
+                    console.error('Failed to parse data-args:', err);
+                }
+            } else {
+                window.bridge.callLua(action);
+            }
+        }
+    });
+
+    console.log('Bridge initialized');
+</script>
+</body>
+</html>

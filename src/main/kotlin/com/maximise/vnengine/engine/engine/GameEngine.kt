@@ -6,22 +6,146 @@ import com.maximise.vnengine.engine.persistence.PersistentDataHandler
 import com.maximise.vnengine.engine.persistence.SaveHandler
 import com.maximise.vnengine.engine.runtime.ExecutionState
 import com.maximise.vnengine.engine.runtime.Interpreter
+import kotlinx.coroutines.channels.Channel
+import org.luaj.vm2.Globals
+import org.luaj.vm2.LuaValue
+import org.luaj.vm2.lib.OneArgFunction
+import org.luaj.vm2.lib.TwoArgFunction
+import org.luaj.vm2.lib.ZeroArgFunction
+import org.luaj.vm2.lib.jse.JsePlatform
+import java.io.File
 
 class GameEngine(
     private val interpreter: Interpreter,
     private val saveHandler: SaveHandler,
-    private val persistentDataHandler: PersistentDataHandler
+    private val persistentDataHandler: PersistentDataHandler,
+    private val program: VnNode.Program
 ) {
-    private var program: VnNode.Program? = null
     private val stateListeners = mutableListOf<(GameState) -> Unit>()
+    private val lua: Globals = JsePlatform.standardGlobals()
+    private val screenHolder: MutableMap<String, String> = mutableMapOf()
+    private val uiEventChannel: Channel<String> = Channel(Channel.UNLIMITED) // TODO: change type for smth else
+
+    init {
+        setupLuaAPI()
+        loadLuaScripts()
+        loadScreens()
+    }
 
     fun addStateListener(listener: (GameState) -> Unit) {
         stateListeners.add(listener)
     }
 
-    fun start(program: VnNode.Program, saveName: String? = null) {
-        this.program = program
+    private fun loadScreens(path: String = "/home/smol/project/VNEngine/res/screens") {
+        val dir = File(path)
+        if (dir.isFile) {
+            if (dir.extension == "html") {
+                screenHolder.put(dir.name, dir.path)
+                //println("screen ${dir.name} = ${dir.path}")
+            }
+        } else {
+            dir.list().forEach { name ->
+                loadScreens("$path/$name")
+            }
+        }
+    }
 
+    fun resolveScreen(name: String): String {
+        return screenHolder[name] ?: throw RuntimeException("Screen $name not found")
+    }
+
+    private fun setupLuaAPI() {
+        // show_screen(screen_name, data)
+        lua.set("show_screen", object : TwoArgFunction() {
+            override fun call(screenName: LuaValue, luaData: LuaValue): LuaValue {
+                val screen = screenName.tojstring()
+                val data = luaTableToMap(luaData)
+                notifyListeners(GameState.ShowScreen(
+                    screenName = screen,
+                    data = data
+                ))
+                return NIL
+            }
+        })
+
+        // start_game(saveName or null for new game)
+        lua.set("start_game", object : OneArgFunction() {
+            override fun call(saveName: LuaValue): LuaValue {
+                val save = saveName.tojstring()
+                runGame(save)
+                return NIL
+            }
+        })
+
+        lua.set("start_game", object : ZeroArgFunction() {
+            override fun call(): LuaValue {
+                runGame()
+                return NIL
+            }
+        })
+
+        lua.set("advance_dialogue", object : ZeroArgFunction() {
+            override fun call(): LuaValue {
+
+                return NIL
+            }
+        })
+    }
+
+    private fun loadLuaScripts(path: String = "/home/smol/project/VNEngine/res/scripts") {
+        val dir = File(path)
+        if (dir.isFile) {
+            if (dir.extension == "lua") {
+                val script = dir.inputStream().readBytes().toString(Charsets.UTF_8)
+                lua.load(script).call()
+            }
+        } else {
+            dir.list().forEach { name ->
+                loadLuaScripts("$path/$name")
+            }
+        }
+    }
+
+    fun callLuaFunction(functionName: String, args: List<String>) {
+        try {
+            val luaFunc = lua.get(functionName)
+
+            if (luaFunc.isnil()) {
+                println("Lua function not found: $functionName")
+                return
+            }
+
+            when (args.size) {
+                0 -> luaFunc.call()
+                1 -> luaFunc.call(LuaValue.valueOf(args[0]))
+                2 -> luaFunc.call(
+                    LuaValue.valueOf(args[0]),
+                    LuaValue.valueOf(args[1])
+                )
+                else -> {
+                    val luaArgs = args.map { LuaValue.valueOf(it) }.toTypedArray()
+                    luaFunc.invoke(luaArgs)
+                }
+            }
+        } catch (e: Exception) {
+            println("Error calling Lua function $functionName: ${e.message}")
+            e.printStackTrace()
+        }
+    }
+
+    fun start() {
+        println("[Engine] Calling show_main_menu lua function")
+        callLuaFunction("show_main_menu", emptyList())
+    }
+
+    fun showScreen(screenName: String, data: Map<String, Any>) {
+        notifyListeners(GameState.ShowScreen(
+            screenName = screenName,
+            data = data
+        ))
+    }
+
+    fun runGame(saveName: String? = null) {
         val (stack, vars) = if (saveName != null) {
             saveHandler.loadSave(saveName)
         } else {
@@ -35,10 +159,7 @@ class GameEngine(
             savedVariables = vars,
             persistentValues = persistentDataHandler.getVariables()
         )
-        runGame()
-    }
 
-    fun runGame() { // TODO: rename this function to advance and move game loop into a different function that will account for load/exit commands
         while (true) {
             when(val state = interpreter.advance()) {
                 is ExecutionState.ShowDialogue -> {
@@ -83,24 +204,55 @@ class GameEngine(
         )
     }
 
-    fun load(saveName: String) {
-        val prog = program ?: throw IllegalStateException("No program loaded")
-        val (stack, variables) = saveHandler.loadSave(saveName)
-
-        interpreter.run(
-            program = prog,
-            persistentDialogue = persistentDataHandler.getSeenDialogue(),
-            savedStack = stack,
-            savedVariables = variables,
-            persistentValues = persistentDataHandler.getVariables()
-        )
-
-        // TODO: update current dialogue, choice and bg
-    }
-
     fun listSaves(): List<String> = saveHandler.listSaves()
 
     private fun notifyListeners(state: GameState) {
         stateListeners.forEach { it(state) }
+    }
+
+    private fun luaTableToMap(table: LuaValue): Map<String, Any> {
+        if (!table.istable()) return emptyMap()
+
+        val result = mutableMapOf<String, Any>()
+        var key = LuaValue.NIL
+
+        while (true) {
+            val next = table.next(key)
+            if (next.arg1().isnil()) break
+
+            key = next.arg1()
+            val value = next.arg(2)
+
+            val keyStr = if (key.isint()) key.toint().toString() else key.tojstring()
+
+            result[keyStr] = when {
+                value.isint() -> value.toint()
+                value.isnumber() -> value.todouble()
+                value.isstring() -> value.tojstring()
+                value.isboolean() -> value.toboolean()
+                value.istable() -> luaTableToMap(value)
+                else -> value.tojstring()
+            }
+        }
+
+        return result
+    }
+
+    private fun mapToLuaTable(map: Map<String, Any>): LuaValue {
+        val table = LuaValue.tableOf()
+
+        map.forEach { (key, value) ->
+            val luaValue = when (value) {
+                is Int -> LuaValue.valueOf(value)
+                is Double -> LuaValue.valueOf(value)
+                is String -> LuaValue.valueOf(value)
+                is Boolean -> LuaValue.valueOf(value)
+                is Map<*, *> -> mapToLuaTable(value as Map<String, Any>)
+                else -> LuaValue.valueOf(value.toString())
+            }
+            table.set(key, luaValue)
+        }
+
+        return table
     }
 }
