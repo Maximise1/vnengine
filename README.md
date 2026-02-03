@@ -44,10 +44,11 @@ Run VN in a window and be happy.
 
 ## Future goals
 
-1. Add rollback function
-2. Compile script into bytecode and execute it line-by-line. 
-3. Display error log and not crash, display error after compilation. 
-4. Make GUI customizable. 
-5. Embed Lua as a scripting language for writing VN logic. 
-6. Add assignId support (each block can be marked with a unique id to ensure forward compatibility and simplify save transfer between versions). 
-7. Add proper save transfer between versions (add export save button when game ends; it should basically compress ast and current global state into a huge blob, then the next game version should load previous ast and map each dialogue line).
+1. Resolve stack smashing error.
+2. Add rollback function
+3. Compile script into bytecode and execute it line-by-line. 
+4. Display error log and not crash, display error after compilation. 
+5. Make GUI customizable. 
+6. Embed Lua as a scripting language for writing VN logic. 
+7. Add assignId support (each block can be marked with a unique id to ensure forward compatibility and simplify save transfer between versions). 
+8. Add proper save transfer between versions (add export save button when game ends; it should basically compress ast and current global state into a huge blob, then the next game version should load previous ast and map each dialogue line).

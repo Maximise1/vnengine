@@ -1,12 +1,22 @@
 package com.maximise.vnengine.engine.engine
 
+import com.maximise.vnengine.engine.ast.AdvanceMode
 import com.maximise.vnengine.engine.ast.VnNode
 import com.maximise.vnengine.engine.ast.asBool
 import com.maximise.vnengine.engine.persistence.PersistentDataHandler
 import com.maximise.vnengine.engine.persistence.SaveHandler
 import com.maximise.vnengine.engine.runtime.ExecutionState
 import com.maximise.vnengine.engine.runtime.Interpreter
+import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.onFailure
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import org.luaj.vm2.Globals
 import org.luaj.vm2.LuaValue
 import org.luaj.vm2.lib.OneArgFunction
@@ -14,44 +24,64 @@ import org.luaj.vm2.lib.TwoArgFunction
 import org.luaj.vm2.lib.ZeroArgFunction
 import org.luaj.vm2.lib.jse.JsePlatform
 import java.io.File
+import kotlin.coroutines.cancellation.CancellationException
+
+private val logger = KotlinLogging.logger {  }
 
 class GameEngine(
     private val interpreter: Interpreter,
     private val saveHandler: SaveHandler,
     private val persistentDataHandler: PersistentDataHandler,
-    private val program: VnNode.Program
+    private val program: VnNode.Program,
+    private val assetLoader: AssetLoader
 ) {
     private val stateListeners = mutableListOf<(GameState) -> Unit>()
     private val lua: Globals = JsePlatform.standardGlobals()
-    private val screenHolder: MutableMap<String, String> = mutableMapOf()
-    private val uiEventChannel: Channel<String> = Channel(Channel.UNLIMITED) // TODO: change type for smth else
+    private var uiEventChannel: Channel<UiEvent>? = null
+    private val engineScope: CoroutineScope = CoroutineScope(
+        Dispatchers.Default + SupervisorJob()
+    )
+    private var currentGameJob: Job? = null
+    private val screenState: MutableMap<String, Any> = mutableMapOf()
 
     init {
         setupLuaAPI()
         loadLuaScripts()
-        loadScreens()
     }
 
     fun addStateListener(listener: (GameState) -> Unit) {
         stateListeners.add(listener)
     }
 
-    private fun loadScreens(path: String = "/home/smol/project/VNEngine/res/screens") {
-        val dir = File(path)
-        if (dir.isFile) {
-            if (dir.extension == "html") {
-                screenHolder.put(dir.name, dir.path)
-                //println("screen ${dir.name} = ${dir.path}")
-            }
-        } else {
-            dir.list().forEach { name ->
-                loadScreens("$path/$name")
+    private suspend fun waitForEventOrTimeout(seconds: Double): UiEvent {
+        return withTimeoutOrNull((seconds * 1000).toLong()) {
+            uiEventChannel!!.receive()
+        } ?: UiEvent.AdvanceExecution
+    }
+
+    private fun startGame(saveName: String? = null) {
+        currentGameJob?.cancel()
+        uiEventChannel?.cancel()
+
+        uiEventChannel = Channel(Channel.UNLIMITED)
+
+        currentGameJob = engineScope.launch {
+            try {
+                runGame(saveName)
+            } catch (e: CancellationException) {
+                logger.info { "Game cancelled" }
+            } catch (e: Exception) {
+                logger.error(e) { "Failed to start new game" }
             }
         }
     }
 
-    fun resolveScreen(name: String): String {
-        return screenHolder[name] ?: throw RuntimeException("Screen $name not found")
+    fun sendUiEvent(event: UiEvent) {
+        logger.debug { "Sending event: $event" }
+        uiEventChannel!!.trySend(event)
+            .onFailure {
+                logger.warn { "Failed to send UI event: $event" }
+            }
     }
 
     private fun setupLuaAPI() {
@@ -60,33 +90,42 @@ class GameEngine(
             override fun call(screenName: LuaValue, luaData: LuaValue): LuaValue {
                 val screen = screenName.tojstring()
                 val data = luaTableToMap(luaData)
-                notifyListeners(GameState.ShowScreen(
-                    screenName = screen,
-                    data = data
-                ))
+                showScreen(screen, data)
                 return NIL
             }
         })
 
         // start_game(saveName or null for new game)
-        lua.set("start_game", object : OneArgFunction() {
+        lua.set("load_game", object : OneArgFunction() {
             override fun call(saveName: LuaValue): LuaValue {
                 val save = saveName.tojstring()
-                runGame(save)
+                startGame(save)
                 return NIL
             }
         })
 
         lua.set("start_game", object : ZeroArgFunction() {
             override fun call(): LuaValue {
-                runGame()
+                startGame()
                 return NIL
             }
         })
 
         lua.set("advance_dialogue", object : ZeroArgFunction() {
             override fun call(): LuaValue {
+                sendUiEvent(UiEvent.AdvanceExecution)
+                //engineScope.launch {
+                //    uiEventChannel.send(UiEvent.AdvanceDialogue)
+                //}
+                return NIL
+            }
+        })
 
+        lua.set("select_choice", object : OneArgFunction() {
+            override fun call(index: LuaValue): LuaValue {
+                val choiceIndex = index.toint()
+                logger.debug { "Choice selected: $choiceIndex" }
+                sendUiEvent(UiEvent.SelectChoice(choiceIndex))
                 return NIL
             }
         })
@@ -111,7 +150,7 @@ class GameEngine(
             val luaFunc = lua.get(functionName)
 
             if (luaFunc.isnil()) {
-                println("Lua function not found: $functionName")
+                logger.warn { "Lua function not found: $functionName" }
                 return
             }
 
@@ -128,13 +167,12 @@ class GameEngine(
                 }
             }
         } catch (e: Exception) {
-            println("Error calling Lua function $functionName: ${e.message}")
-            e.printStackTrace()
+            logger.error { "Error calling Lua function $functionName: ${e.message}" }
         }
     }
 
     fun start() {
-        println("[Engine] Calling show_main_menu lua function")
+        logger.debug { "Calling show_main_menu lua function" }
         callLuaFunction("show_main_menu", emptyList())
     }
 
@@ -145,7 +183,7 @@ class GameEngine(
         ))
     }
 
-    fun runGame(saveName: String? = null) {
+    suspend fun runGame(saveName: String? = null) {
         val (stack, vars) = if (saveName != null) {
             saveHandler.loadSave(saveName)
         } else {
@@ -161,38 +199,84 @@ class GameEngine(
         )
 
         while (true) {
-            when(val state = interpreter.advance()) {
-                is ExecutionState.ShowDialogue -> {
-                    notifyListeners(GameState.Dialogue(
-                        speaker = state.dialogue.speaker,
-                        text = state.dialogue.text,
-                        isSeen = interpreter.context.isDialogueSeen(
-                            state.dialogue.blockIndex!!
-                        )
-                    ))
+            val state = advance()
+            val event = when {
+                state is GameState.Background && state.advanceMode == AdvanceMode.AUTO -> {
+                    waitForEventOrTimeout(state.time ?: 0.0)
                 }
-
-                is ExecutionState.ShowChoice -> {
-                    val availableOptions = state.choiceStatement.options
-                        .mapIndexedNotNull { index, option ->
-                            if (option.expression == null ||
-                                interpreter.evaluateExpression(option.expression).asBool()) {
-                                ChoiceOption(index, option.label)
-                            } else null
-                        }
-
-                    notifyListeners(GameState.Choice(availableOptions))
+                else -> {
+                    uiEventChannel!!.receive()
                 }
+            }
 
-                is ExecutionState.Finished -> {
-                    notifyListeners(GameState.Finished)
-                    break
-                }
+            logger.debug { "Event received: $event" }
+
+            if (event is UiEvent.ExitGameLoop) break
+            handleEvent(event)
+        }
+    }
+
+    private fun advance(): GameState {
+        return when(val state = interpreter.advance()) {
+            is ExecutionState.ShowDialogue -> {
+                val state = GameState.Dialogue(
+                    speaker = state.dialogue.speaker,
+                    text = state.dialogue.text,
+                    isSeen = interpreter.context.isDialogueSeen(
+                        state.dialogue.blockIndex!!
+                    )
+                )
+                notifyListeners(state)
+                state
+            }
+
+            is ExecutionState.ShowChoice -> {
+                val availableOptions = state.choiceStatement.options
+                    .mapIndexedNotNull { index, option ->
+                        if (option.expression == null ||
+                            interpreter.evaluateExpression(option.expression).asBool()) {
+                            ChoiceOption(index, option.label)
+                        } else null
+                    }
+                val state = GameState.Choice(availableOptions)
+
+                notifyListeners(state)
+                state
+            }
+
+            is ExecutionState.ShowBackground -> {
+                val state = GameState.Background(
+                    image = state.backgroundNode.image,
+                    advanceMode = state.backgroundNode.advance,
+                    positionMode = state.backgroundNode.positionMode,
+                    time = state.backgroundNode.time,
+                    startx = state.backgroundNode.startx,
+                    starty = state.backgroundNode.starty,
+                    endx = state.backgroundNode.endx,
+                    endy = state.backgroundNode.endy,
+                    x = state.backgroundNode.x,
+                    y = state.backgroundNode.y
+                )
+                notifyListeners(state)
+                state
+            }
+
+            is ExecutionState.Finished -> {
+                notifyListeners(GameState.Finished)
+                GameState.Finished
             }
         }
     }
 
-    fun selectChoice(choiceIndex: Int) {
+    private fun handleEvent(event: UiEvent) {
+        when (event) {
+            is UiEvent.ExitGameLoop -> return
+            is UiEvent.AdvanceExecution -> return
+            is UiEvent.SelectChoice -> selectChoice(event.index)
+        }
+    }
+
+    private fun selectChoice(choiceIndex: Int) {
         interpreter.selectChoice(choiceIndex)
     }
 
@@ -254,5 +338,10 @@ class GameEngine(
         }
 
         return table
+    }
+
+    fun shutdown() {
+        engineScope.cancel()
+        uiEventChannel?.close()
     }
 }

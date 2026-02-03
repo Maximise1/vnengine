@@ -1,6 +1,5 @@
 <div class="game-screen" data-action="advance_dialogue">
     <!-- Background overlay for visual novel atmosphere -->
-    <div class="vn-overlay"></div>
 
     <!-- Top menu bar - styled like Ren'Py's quick menu -->
     <div class="quick-menu">
@@ -12,6 +11,7 @@
     </div>
 
     <!-- Dialogue textbox - classic Ren'Py style -->
+    {{#if text}}
     <div class="textbox-container">
         <div class="textbox">
             {{#if speaker}}
@@ -28,6 +28,20 @@
             <div class="advance-indicator">▼</div>
         </div>
     </div>
+    {{/if}}
+
+    <!-- Choice menu - Ren'Py style -->
+    {{#if choices}}
+    <div class="choice-container">
+        <div class="choice-menu">
+            {{#each choices}}
+            <button class="choice-btn" data-action="select_choice:{{index}}">
+                {{label}}
+            </button>
+            {{/each}}
+        </div>
+    </div>
+    {{/if}}
 </div>
 
 <style>
@@ -35,19 +49,62 @@
         position: relative;
         width: 100%;
         height: 100vh;
-        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
         overflow: hidden;
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     }
 
-    .vn-overlay {
+    .game-screen::before {
+        content: '';
         position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: radial-gradient(ellipse at center, transparent 0%, rgba(0,0,0,0.3) 100%);
-        pointer-events: none;
+        inset: 0;
+        background: url('{{background}}') no-repeat center/cover;
+        z-index: -1;
+        will-change: transform;
+
+        {{#if backgroundPosition == 'custom_static'}}
+        background-position: {{x}} {{y}};
+        {{/if}}
+        {{#if backgroundPosition == 'top'}}    background-position: center top; {{/if}}
+        {{#if backgroundPosition == 'bottom'}} background-position: center bottom; {{/if}}
+        {{#if backgroundPosition == 'left'}}   background-position: left center; {{/if}}
+        {{#if backgroundPosition == 'right'}}  background-position: right center; {{/if}}
+
+        {{#if backgroundAnimation}}
+        animation: {{backgroundAnimation}} {{animationDuration}}s ease-in-out forwards;
+        {{/if}}
+
+        {{#if backgroundPosition == 'custom_animation'}}
+        animation: bg-custom {{animationDuration}}s ease-in-out forwards;
+        {{/if}}
+    }
+
+    /* Custom transform animation */
+    {{#if backgroundPosition == 'custom_animation'}}
+    @keyframes bg-custom {
+        0% { background-position: {{startx}} {{starty}}; }
+        100% { background-position: {{endx}} {{endy}}; }
+    }
+    {{/if}}
+
+    /* Predefined pan animations - adjusted for oversized ::before */
+    @keyframes bg-bottom-to-top {
+        0% { background-position: 50% 100%; }
+        100% { background-position: 50% 0%; }
+    }
+
+    @keyframes bg-top-to-bottom {
+        0% { background-position: 50% 0%; }
+        100% { background-position: 50% 100%; }
+    }
+
+    @keyframes bg-left-to-right {
+        0% { background-position: 0% 50%; }
+        100% { background-position: 100% 50%; }
+    }
+
+    @keyframes bg-right-to-left {
+        0% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
     }
 
     /* Quick Menu - Ren'Py style */
@@ -69,9 +126,6 @@
         font-size: 14px;
         cursor: pointer;
         transition: all 0.2s ease;
-        display: flex;
-        align-items: center;
-        gap: 6px;
         font-weight: 500;
     }
 
@@ -83,10 +137,6 @@
 
     .quick-btn:active {
         transform: translateY(0);
-    }
-
-    .btn-icon {
-        font-size: 16px;
     }
 
     /* Textbox Container - Bottom aligned like Ren'Py */
@@ -179,6 +229,71 @@
         background: linear-gradient(135deg, #7a7a7a 0%, #5a5a5a 100%);
     }
 
+    /* Choice Container - Centered on screen */
+    .choice-container {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 80%;
+        max-width: 600px;
+        z-index: 60;
+    }
+
+    .choice-menu {
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+    }
+
+    /* Choice Button - Ren'Py inspired */
+    .choice-btn {
+        background: linear-gradient(to right,
+            rgba(30, 30, 50, 0.95) 0%,
+            rgba(20, 20, 40, 0.95) 100%);
+        border: 3px solid rgba(255, 255, 255, 0.2);
+        border-left: 6px solid #e94560;
+        color: #fff;
+        padding: 20px 30px;
+        font-size: 18px;
+        text-align: left;
+        cursor: pointer;
+        border-radius: 8px;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+        position: relative;
+        overflow: hidden;
+    }
+
+    .choice-btn::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 0;
+        height: 100%;
+        background: linear-gradient(to right,
+            rgba(233, 69, 96, 0.2) 0%,
+            transparent 100%);
+        transition: width 0.3s ease;
+        z-index: -1;
+    }
+
+    .choice-btn:hover {
+        border-color: rgba(255, 255, 255, 0.5);
+        border-left-color: #ff5577;
+        transform: translateX(10px);
+        box-shadow: 0 6px 25px rgba(233, 69, 96, 0.4);
+    }
+
+    .choice-btn:hover::before {
+        width: 100%;
+    }
+
+    .choice-btn:active {
+        transform: translateX(10px) scale(0.98);
+    }
+
     /* Responsive adjustments */
     @media (max-width: 768px) {
         .quick-menu {
@@ -208,29 +323,14 @@
         .namebox-text {
             font-size: 16px;
         }
+
+        .choice-container {
+            width: 90%;
+        }
+
+        .choice-btn {
+            padding: 15px 20px;
+            font-size: 16px;
+        }
     }
 </style>
-
-<script>
-    // Handle button clicks
-    document.querySelectorAll('.quick-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-            const action = this.getAttribute('data-action');
-            // Call your Lua/backend function
-            window.cefQuery({
-                request: action,
-                onSuccess: function(response) {},
-                onFailure: function(error_code, error_message) {}
-            });
-        });
-    });
-
-    // Click anywhere on textbox to advance
-    document.querySelector('.textbox')?.addEventListener('click', function() {
-        window.cefQuery({
-            request: 'advance_dialogue',
-            onSuccess: function(response) {},
-            onFailure: function(error_code, error_message) {}
-        });
-    });
-</script>

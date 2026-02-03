@@ -20,6 +20,10 @@ dependencies {
     // html+css+js
     implementation("me.friwi:jcefmaven:141.0.10")
 
+    // Logging
+    implementation("io.github.oshai:kotlin-logging-jvm:7.0.14")
+    implementation("ch.qos.logback:logback-classic:1.5.26")
+
     testImplementation(kotlin("test"))
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.1")
 }
@@ -33,6 +37,8 @@ application {
 
     applicationDefaultJvmArgs = listOf(
         "-Xmx2G",
-        "-Djava.library.path=${System.getProperty("user.home")}/.jcef"
+        "-Djava.library.path=${System.getProperty("user.home")}/.jcef",
+        // Uncomment for production
+        //"-Dlogback.configurationFile=logback-prod.xml"
     )
 }

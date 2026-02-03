@@ -80,6 +80,68 @@ sealed class VnNode(pos: SourcePos) {
         val value: Expression,
         val pos: SourcePos
     ) : VnNode(pos)
+
+    data class BackgroundStatement(
+        val image: String,
+        val advance: AdvanceMode,
+        val positionMode: PositionMode,
+        val time: Double? = null,
+        val x: PositionValue? = null,
+        val y: PositionValue? = null,
+        val startx: PositionValue? = null,
+        val starty: PositionValue? = null,
+        val endx: PositionValue? = null,
+        val endy: PositionValue? = null,
+        val pos: SourcePos
+    ) : VnNode(pos)
+
+    data class SpriteStatement(
+        val image: String,
+        val pos: SourcePos
+    ) : VnNode(pos)
+}
+
+enum class AdvanceMode {
+    AFTER_CLICK,
+    AUTO
+}
+
+enum class PositionMode {
+    RIGHT,
+    LEFT,
+    TOP,
+    BOTTOM,
+    BOTTOM_TO_TOP,
+    TOP_TO_BOTTOM,
+    LEFT_TO_RIGHT,
+    RIGHT_TO_LEFT,
+    CUSTOM_STATIC,
+    CUSTOM_ANIMATION,
+    CENTER
+}
+
+sealed interface PositionValue {
+    data class PixelPosition(val value: Int) : PositionValue {
+        override fun toString(): String {
+            return "${value}px"
+        }
+
+        override fun toPercent(dimension: Int): Double {
+            return (value / dimension.toDouble()) * 100.0
+        }
+    }
+    data class PercentPosition(val value: Double) : PositionValue {
+        override fun toString(): String {
+            return "$value%"
+        }
+
+        override fun toPercent(dimension: Int): Double {
+            return value
+        }
+    }
+
+    override fun toString(): String
+    fun toPercent(dimension: Int): Double
 }
 
 enum class UnaryExpression(val bp: Int) {
@@ -89,6 +151,14 @@ enum class UnaryExpression(val bp: Int) {
                 is Value.Num -> Value.Bool(v.v != 0.0)
                 is Value.Str -> Value.Bool(v.v != "")
                 is Value.Bool -> v
+            }
+        }
+    },
+    MINUS(9) {
+        override fun apply(v: Value): Value {
+            return when (v) {
+                is Value.Num -> Value.Num(-v.v)
+                else -> throw RuntimeException("Unary minus is not applicable to $v")
             }
         }
     };
@@ -142,6 +212,34 @@ enum class BinaryExpression(val lbp: Int, val rbp: Int) { // TODO: add string co
                     Value.Bool(l.asBool() == r.v)
 
                 else -> throw RuntimeException("Invalid operands for ==: ${l} and ${r}")
+            }
+    },
+    NOT_EQUAL(1, 2) {
+        override fun apply(l: Value, r: Value): Value =
+            when {
+                l is Value.Num && r is Value.Num ->
+                    Value.Bool(l.v != r.v)
+
+                l is Value.Num && r is Value.Str -> {
+                    Value.Bool(l.v != r.asNumber())
+                }
+
+                l is Value.Str && r is Value.Num ->
+                    Value.Bool(l.asNumber() != r.v)
+
+                l is Value.Bool && r is Value.Bool ->
+                    Value.Bool(l.v != r.v)
+
+                l is Value.Str && r is Value.Str ->
+                    Value.Bool(l.v != r.v)
+
+                l is Value.Bool && r is Value.Str ->
+                    Value.Bool(l.v != r.asBool())
+
+                l is Value.Str && r is Value.Bool ->
+                    Value.Bool(l.asBool() != r.v)
+
+                else -> throw RuntimeException("Invalid operands for !=: ${l} and ${r}")
             }
     },
     LESS_EQUAL(3, 4) {

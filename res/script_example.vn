@@ -4,8 +4,71 @@ block start { // Always beginning execution from "start" block
     testBoolean = true
     test = 10
     mc "..."
+    "Narrator speech."
+
+    // Common backgrounds
+    background 3 { // Static, centered
+        advance = after_click
+    }
+    background 3 { // Static, positioned top
+        advance = after_click
+        position = top
+    }
+    background 3 {
+        advance = after_click
+        position = right
+    }
+    background 3 {
+        advance = after_click
+        position = left
+    }
+    background 3 { // order of arguments doesn't matter
+        position = bottom
+        advance = after_click
+    }
+
+    // Panning animations
+    background 2 {
+        advance = after_click
+        position = bottom_to_top
+        time = 2.0
+    }
+    background 2 {
+        advance = after_click
+        position = top_to_bottom
+        time = 3.5
+    }
+    background 2 {
+        advance = after_click
+        position = left_to_right
+        time = 1.5
+    }
+    background 2 {
+        advance = after_click
+        position = right_to_left
+        time = 2.0
+    }
+
+    // Custom positioning
+    background 3 {
+        advance = after_click
+        position = custom_static
+        x = 10%
+        y = 10%
+    }
+    background 2 {
+        advance = after_click
+        position = custom_animation
+        startx = 0%
+        endx = 100%
+        starty = 0%
+        endy = 100%
+        time = 2.0
+    }
+
     mc ""Very long string. Newlines are replaced with spaces.
     Continuation of a very long string.""
+    background 2
     execute continuation
     mc "..."
     mc "..."
@@ -15,7 +78,7 @@ block continuation {
     "This is some text."
 
     choice {
-        "Option 1" test == 10 {
+        "Option 1" ((test == 10) and (test != 100)) {
             "Option 1 called"
         }
         "Option 2" {

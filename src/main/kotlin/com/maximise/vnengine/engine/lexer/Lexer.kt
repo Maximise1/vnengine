@@ -33,7 +33,6 @@ class Lexer {
 
     private fun advance(): Char? {
         val symbol = peek()
-        //println(symbol)
 
         symbol.let { it ->
             if (it == '\n') {
@@ -57,7 +56,6 @@ class Lexer {
 
         while (peek() != null) {
             val token = parseToken()
-            //println(token)
             tokens.add(token)
         }
 
@@ -181,8 +179,16 @@ class Lexer {
     }
 
     private fun parseNotOperator(): Token {
-        val token = Token.NotOperator(l = line, c = col)
-        advance()
+        val token = if (peek(1) == '=') {
+            val token = Token.NotEqualOperator(l = line, c = col)
+            advance()
+            advance()
+            token
+        } else {
+            val token = Token.NotOperator(l = line, c = col)
+            advance()
+            token
+        }
         return token
     }
 
@@ -209,8 +215,8 @@ class Lexer {
         }
 
         // Parsing numbers
-        if ((next!!.code < 58) && (next.code > 47)) {
-            return parseNumber()
+        if ((next!!.code < 58) && (next.code > 47) || (next == '-')) {
+            return parseNumericValue()
         }
 
         // Parsing keywords and identifiers
@@ -253,10 +259,16 @@ class Lexer {
 
         return Token.StringLiteral(value = value.toString(), l = startLine, c = startCol)
     }
-    private fun parseNumber(): Token {
+    private fun parseNumericValue(): Token {
         val value = StringBuilder()
         val startLine = line
         val startCol = col
+        var minus = 1
+
+        if (peek() == '-') {
+            minus *= -1
+            advance()
+        }
 
         while (peek() != null && peek()!!.code < 58 && peek()!!.code > 47) {
             value.append(advance())
@@ -269,7 +281,18 @@ class Lexer {
             }
         }
 
-        return Token.NumberLiteral(value = value.toString().toDouble(), l = startLine, c = startCol)
+        if (peek() == 'p' && peek(1) == 'x') {
+            advance()
+            advance()
+            return Token.PixelValue(value = value.toString().toInt()*minus, l = startLine, c = startCol)
+        }
+
+        if (peek() == '%') {
+            advance()
+            return Token.PercentValue(value = value.toString().toDouble()*minus, l = startLine, c = startCol)
+        }
+
+        return Token.NumberLiteral(value = value.toString().toDouble()*minus, l = startLine, c = startCol)
     }
 
     private fun parseLetters(): Token {

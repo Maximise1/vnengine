@@ -1,6 +1,7 @@
 package com.maximise.vnengine.engine.di
 
 import com.maximise.vnengine.engine.ast.VnNode
+import com.maximise.vnengine.engine.engine.AssetLoader
 import com.maximise.vnengine.engine.engine.GameEngine
 import com.maximise.vnengine.engine.lexer.Lexer
 import com.maximise.vnengine.engine.parser.Indexer
@@ -28,6 +29,10 @@ class Container {
         Interpreter()
     }
 
+    val assetLoader: AssetLoader by lazy {
+        AssetLoader()
+    }
+
     val parser: Parser by lazy {
         Parser(indexer)
     }
@@ -41,17 +46,24 @@ class Container {
             interpreter = interpreter,
             saveHandler = saveHandler,
             persistentDataHandler = persistentDataHandler,
-            program = parseProgram()
+            program = parseProgram(),
+            assetLoader = assetLoader
         )
     }
 
     val gui: GUI by lazy {
-        GUI(gameEngine)
+        GUI(
+            gameEngine = gameEngine,
+            assetLoader = assetLoader
+        )
     }
 
     fun parseProgram(): VnNode.Program {
         val file = File("/home/smol/project/VNEngine/res/script_example.vn")
         val tokens = lexer.tokenize(file.readText())
+        /*tokens.forEach { token ->
+            println(token)
+        }*/
         return parser.parseProgram(tokens)
     }
 }

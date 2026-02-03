@@ -1,7 +1,10 @@
 package com.maximise.vnengine.engine.parser
 
+import com.maximise.vnengine.engine.ast.AdvanceMode
 import com.maximise.vnengine.engine.ast.BinaryExpression
 import com.maximise.vnengine.engine.ast.Expression
+import com.maximise.vnengine.engine.ast.PositionMode
+import com.maximise.vnengine.engine.ast.PositionValue
 import com.maximise.vnengine.engine.ast.SourcePos
 import com.maximise.vnengine.engine.ast.UnaryExpression
 import com.maximise.vnengine.engine.ast.VnNode
@@ -26,8 +29,14 @@ class Parser(
         Token.MinusOperator::class to BinaryExpression.MINUS,
         Token.RemOperator::class to BinaryExpression.REM,
         Token.MulOperator::class to BinaryExpression.MUL,
-        Token.PowOperator::class to BinaryExpression.POW
+        Token.PowOperator::class to BinaryExpression.POW,
+        Token.NotEqualOperator::class to BinaryExpression.NOT_EQUAL
     )
+
+    enum class ImageType {
+        SPRITE,
+        BACKGROUND
+    }
 
     private var cursor: Int = 0
     private var tokens: List<Token> = listOf()
@@ -46,7 +55,6 @@ class Parser(
         } else {
             val token = tokens[cursor]
             cursor++
-            //println("Parsing token $token")
             token
         }
     }
@@ -106,8 +114,8 @@ class Parser(
         val operand = when (token) {
             is Token.OpenParenthesis ->  {
                 val expr = parseExpression()
-                val closeBracket = advance()
-                if (closeBracket !is Token.CloseParenthesis) {
+                val closePar = advance()
+                if (closePar !is Token.CloseParenthesis) {
                     throw RuntimeException("Unclosed parenthesis: $token")
                 }
                 expr
@@ -118,6 +126,15 @@ class Parser(
                 Expression.UnaryOperator(
                     expression = expr,
                     operator = UnaryExpression.NOT,
+                    p = SourcePos(token.line, token.col)
+                )
+            }
+
+            is Token.MinusOperator -> {
+                val expr = parseExpression(UnaryExpression.MINUS.bp)
+                Expression.UnaryOperator(
+                    expression = expr,
+                    operator = UnaryExpression.MINUS,
                     p = SourcePos(token.line, token.col)
                 )
             }
@@ -201,18 +218,303 @@ class Parser(
             "if" -> parseIf()
             "else" -> throw RuntimeException("else keyword can't be on it's own")
             "choice" -> parseChoice()
+            "background" -> parseImage(ImageType.BACKGROUND)
+            "sprite" -> parseImage(ImageType.SPRITE)
             else -> throw RuntimeException("Unexpected keyword: ${keyword.value}")
         }
+    }
+
+    private fun parseImage(imageType: ImageType): VnNode {
+        val image = advance()
+
+        if (image !is Token.Identifier && image !is Token.NumberLiteral) {
+            throw RuntimeException("Image token expected, instead have ${image}")
+        }
+
+        val value = if (image is Token.Identifier) {
+            image.value
+        } else {
+            if ((image as Token.NumberLiteral).value % 1 != 0.0)
+                throw RuntimeException("Image names can't contain \".\"")
+            image.value.toInt().toString()
+        }
+
+        return if (imageType == ImageType.BACKGROUND) {
+            parseBackgroundStatement(
+                image = value,
+                pos = SourcePos(image.line, image.col)
+            )
+        } else {
+            VnNode.SpriteStatement(
+                image = value,
+                pos = SourcePos(image.line, image.col)
+            )
+        }
+    }
+
+    private fun parseBackgroundStatement(
+        pos: SourcePos,
+        image: String
+    ): VnNode.BackgroundStatement {
+        if (peek() !is Token.OpenBraces) {
+            return VnNode.BackgroundStatement(
+                image = image,
+                advance = AdvanceMode.AUTO,
+                positionMode = PositionMode.CENTER,
+                pos = pos
+            )
+        }
+
+        var advance: AdvanceMode? = null
+        var position: PositionMode? = null
+        var startx: PositionValue? = null
+        var starty: PositionValue? = null
+        var endx: PositionValue? = null
+        var endy: PositionValue? = null
+        var time: Double? = null
+        var x: PositionValue? = null
+        var y: PositionValue? = null
+
+        advance() // skipped open braces
+        var token = advance()
+        while (token != null && token !is Token.CloseBraces) {
+            if (token !is Token.Identifier) {
+                throw RuntimeException("Background parameter expected. Instead got: $token")
+            }
+
+            val assign = advance()
+            if (assign !is Token.AssignOperator) {
+                throw RuntimeException("\"=\" operator expected after background parameter. Instead got: $assign")
+            }
+
+            val parameter = advance()
+
+            when (token.value) {
+                "advance" -> {
+                    if (parameter !is Token.Identifier)
+                        throw RuntimeException(
+                            "Expected advance mode (after_click or auto) after \"advance\""
+                        )
+
+                    try {
+                        advance = AdvanceMode.valueOf(parameter.value.uppercase())
+                    } catch (e: IllegalArgumentException) {
+                        throw RuntimeException(
+                            "Expected advance mode (after_click or auto) " +
+                                    "after \"advance\", got ${parameter.value}"
+                        )
+                    }
+                }
+
+                "position" -> {
+                    if (parameter !is Token.Identifier)
+                        throw RuntimeException(
+                            "Expected position mode (left, right, center, " +
+                                    "top, bottom, etc...) after \"position\""
+                        )
+
+                    try {
+                        position = PositionMode.valueOf(parameter.value.uppercase())
+                    } catch (e: IllegalArgumentException) {
+                        throw RuntimeException(
+                            "Expected position mode (left, right, center, top, " +
+                                    "bottom, etc...) after \"position\", got ${parameter.value}"
+                        )
+                    }
+                }
+
+                "time" -> {
+                    if (parameter !is Token.NumberLiteral) {
+                        throw RuntimeException(
+                            "Expected number after \"time\", instead got $parameter"
+                        )
+                    }
+                    time = parameter.value
+                }
+
+                "x" -> {
+                    if (parameter is Token.MinusOperator) {
+                        val value = advance()
+                        if (value is Token.PercentValue) {
+                            x = PositionValue.PercentPosition(value.value*-1)
+                        } else if (value is Token.PixelValue) {
+                            x = PositionValue.PixelPosition(value.value*-1)
+                        } else {
+                            throw RuntimeException(
+                                "Expected percent or pixel value " +
+                                        "after \"x\", instead got $parameter"
+                            )
+                        }
+                    } else if (parameter is Token.PercentValue) {
+                        x = PositionValue.PercentPosition(parameter.value)
+                    } else if (parameter is Token.PixelValue) {
+                        x = PositionValue.PixelPosition(parameter.value)
+                    } else {
+                        throw RuntimeException(
+                            "Expected percent or pixel value " +
+                                    "after \"x\", instead got $parameter"
+                        )
+                    }
+                }
+
+                "y" -> {
+                    if (parameter is Token.MinusOperator) {
+                        val value = advance()
+                        if (value is Token.PercentValue) {
+                            y = PositionValue.PercentPosition(value.value*-1)
+                        } else if (value is Token.PixelValue) {
+                            y = PositionValue.PixelPosition(value.value*-1)
+                        } else {
+                            throw RuntimeException(
+                                "Expected percent or pixel value " +
+                                        "after \"y\", instead got $parameter"
+                            )
+                        }
+                    } else if (parameter is Token.PercentValue) {
+                        y = PositionValue.PercentPosition(parameter.value)
+                    } else if (parameter is Token.PixelValue) {
+                        y = PositionValue.PixelPosition(parameter.value)
+                    } else {
+                        throw RuntimeException(
+                            "Expected percent or pixel value " +
+                                    "after \"y\", instead got $parameter"
+                        )
+                    }
+                }
+
+                "startx" -> {
+                    if (parameter is Token.MinusOperator) {
+                        val value = advance()
+                        if (value is Token.PercentValue) {
+                            startx = PositionValue.PercentPosition(value.value*-1)
+                        } else if (value is Token.PixelValue) {
+                            startx = PositionValue.PixelPosition(value.value*-1)
+                        } else {
+                            throw RuntimeException(
+                                "Expected percent or pixel value " +
+                                        "after \"startx\", instead got $parameter"
+                            )
+                        }
+                    } else if (parameter is Token.PercentValue) {
+                        startx = PositionValue.PercentPosition(parameter.value)
+                    } else if (parameter is Token.PixelValue) {
+                        startx = PositionValue.PixelPosition(parameter.value)
+                    } else {
+                        throw RuntimeException(
+                            "Expected percent or pixel value " +
+                                    "after \"startx\", instead got $parameter"
+                        )
+                    }
+                }
+
+                "endx" -> {
+                    if (parameter is Token.MinusOperator) {
+                        val value = advance()
+                        if (value is Token.PercentValue) {
+                            endx = PositionValue.PercentPosition(value.value*-1)
+                        } else if (value is Token.PixelValue) {
+                            endx = PositionValue.PixelPosition(value.value*-1)
+                        } else {
+                            throw RuntimeException(
+                                "Expected percent or pixel value " +
+                                        "after \"endx\", instead got $parameter"
+                            )
+                        }
+                    } else if (parameter is Token.PercentValue) {
+                        endx = PositionValue.PercentPosition(parameter.value)
+                    } else if (parameter is Token.PixelValue) {
+                        endx = PositionValue.PixelPosition(parameter.value)
+                    } else {
+                        throw RuntimeException(
+                            "Expected percent or pixel value " +
+                                    "after \"endx\", instead got $parameter"
+                        )
+                    }
+                }
+
+                "starty" -> {
+                    if (parameter is Token.MinusOperator) {
+                        val value = advance()
+                        if (value is Token.PercentValue) {
+                            starty = PositionValue.PercentPosition(value.value*-1)
+                        } else if (value is Token.PixelValue) {
+                            starty = PositionValue.PixelPosition(value.value*-1)
+                        } else {
+                            throw RuntimeException(
+                                "Expected percent or pixel value " +
+                                        "after \"starty\", instead got $parameter"
+                            )
+                        }
+                    } else if (parameter is Token.PercentValue) {
+                        starty = PositionValue.PercentPosition(parameter.value)
+                    } else if (parameter is Token.PixelValue) {
+                        starty = PositionValue.PixelPosition(parameter.value)
+                    } else {
+                        throw RuntimeException(
+                            "Expected percent or pixel value " +
+                                    "after \"starty\", instead got $parameter"
+                        )
+                    }
+                }
+
+                "endy" -> {
+                    if (parameter is Token.MinusOperator) {
+                        val value = advance()
+                        if (value is Token.PercentValue) {
+                            endy = PositionValue.PercentPosition(value.value*-1)
+                        } else if (value is Token.PixelValue) {
+                            endy = PositionValue.PixelPosition(value.value*-1)
+                        } else {
+                            throw RuntimeException(
+                                "Expected percent or pixel value " +
+                                        "after \"endy\", instead got $parameter"
+                            )
+                        }
+                    } else if (parameter is Token.PercentValue) {
+                        endy = PositionValue.PercentPosition(parameter.value)
+                    } else if (parameter is Token.PixelValue) {
+                        endy = PositionValue.PixelPosition(parameter.value)
+                    } else {
+                        throw RuntimeException(
+                            "Expected percent or pixel value " +
+                                    "after \"endy\", instead got $parameter"
+                        )
+                    }
+                }
+
+                else -> {
+                    throw RuntimeException("Unexpected parameter " +
+                            "${token.value} for background block")
+                }
+            }
+
+            token = advance()
+        }
+
+        if (token == null) {
+            throw RuntimeException("Unexpected end of background block")
+        }
+
+        return VnNode.BackgroundStatement(
+            image = image,
+            advance = advance ?: AdvanceMode.AUTO,
+            positionMode = position ?: PositionMode.CENTER,
+            startx = startx,
+            starty = starty,
+            x = x,
+            y = y,
+            endx = endx,
+            endy = endy,
+            pos = pos,
+            time = time
+        )
     }
 
     private fun parseIf(): VnNode.IfStatement {
         val branches = mutableListOf<VnNode.IfBranch>()
         var elseBody: List<VnNode>? = null
 
-        branches.add(parseIfBranch(
-
-        ))
-
+        branches.add(parseIfBranch())
 
         var next = peek()
         while (next is Token.Keyword && next.value == "else") {
@@ -301,6 +603,20 @@ class Parser(
             }
 
             // Random numbers that don't fit anywhere become ignored statements for later warning
+            if (token is Token.MinusOperator && peek(1) is Token.NumberLiteral) {
+                body.add(
+                    VnNode.IgnoredStatement(
+                        value = ((peek(1) as Token.NumberLiteral).value * -1).toString(),
+                        pos = SourcePos(
+                            line = token.line,
+                            column = token.col
+                        )
+                    ))
+                advance()
+                advance()
+                token = peek()
+                continue
+            }
             if (token is Token.NumberLiteral) {
                 body.add(
                     VnNode.IgnoredStatement(

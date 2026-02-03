@@ -1,12 +1,15 @@
 package com.maximise.vnengine.engine.persistence
 
 import com.maximise.vnengine.engine.ast.Value
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
+
+private val logger = KotlinLogging.logger {  }
 
 class PersistentDataHandler {
     private val variablesPath: String = "data/persistence/variables.bin"
@@ -44,7 +47,7 @@ class PersistentDataHandler {
 
             return result
         } catch (e: IOException) {
-            println("File $dialoguePath is corrupted or missing. Original error: ${e.message}")
+            logger.error { "Failed to load seen dialogue. File $dialoguePath is corrupted or missing. Original error: ${e.message}" }
             return result
         }
     }
@@ -102,7 +105,7 @@ class PersistentDataHandler {
             }
             return result
         } catch (e: IOException) {
-            println("File $variablesPath is corrupted or missing. Original error: ${e.message}")
+            logger.error { "Failed to load persistent variables. File $variablesPath is corrupted or missing. Original error: ${e.message}" }
             return result
         }
     }
