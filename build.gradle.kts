@@ -20,6 +20,9 @@ dependencies {
     // html+css+js
     implementation("me.friwi:jcefmaven:141.0.10")
 
+    // webp encoding
+    //implementation("org.sejda.imageio:webp-imageio:0.3.0")
+
     // Logging
     implementation("io.github.oshai:kotlin-logging-jvm:7.0.14")
     implementation("ch.qos.logback:logback-classic:1.5.26")

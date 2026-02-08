@@ -3,9 +3,9 @@
 
     <!-- Top menu bar - styled like Ren'Py's quick menu -->
     <div class="quick-menu">
-        <button class="quick-btn" data-action="save">Save</button>
-        <button class="quick-btn" data-action="load">Load</button>
-        <button class="quick-btn" data-action="auto">Auto</button>
+        <button class="quick-btn" data-action="show_save_screen:today,true">Save</button>
+        <button class="quick-btn" data-action="show_save_screen:today,false">Load</button>
+        <button class="quick-btn" data-action="back">Back</button>
         <button class="quick-btn" data-action="skip">Skip</button>
         <button class="quick-btn" data-action="open_menu">Menu</button>
     </div>
@@ -35,8 +35,8 @@
     <div class="choice-container">
         <div class="choice-menu">
             {{#each choices}}
-            <button class="choice-btn" data-action="select_choice:{{index}}">
-                {{label}}
+            <button class="choice-btn" data-action="select_choice:{{choices.index}}">
+                {{choices.label}}
             </button>
             {{/each}}
         </div>

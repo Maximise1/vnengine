@@ -220,8 +220,9 @@ class Lexer {
         }
 
         // Parsing keywords and identifiers
-        if ((next == '_') || ((next.code > 64) && (next.code < 91)) ||
-            (next.code > 96) && (next.code < 123)) {
+        if ((next == '_')
+            || ((next.code > 64) && (next.code < 91))
+            || ((next.code > 96) && (next.code < 123))) {
             return parseLetters()
         }
 
@@ -292,6 +293,16 @@ class Lexer {
             return Token.PercentValue(value = value.toString().toDouble()*minus, l = startLine, c = startCol)
         }
 
+        val next = peek()
+
+        if (next != null &&
+            ((next == '_') ||
+                    ((next.code > 64) && (next.code < 91)) ||
+                    ((next.code > 96) && (next.code < 123)))
+        ) {
+            throw RuntimeException("Variables can't start with numbers: $value is followed by ${peek()}")
+        }
+
         return Token.NumberLiteral(value = value.toString().toDouble()*minus, l = startLine, c = startCol)
     }
 
@@ -302,8 +313,10 @@ class Lexer {
         val startLine = line
         val startCol = col
 
-        while ((next == '_') || ((code > 64)
-                    && (code < 91)) || (code > 96) && (code < 123)) {
+        while ((next == '_')
+            || ((code > 64) && (code < 91))
+            || ((code > 96) && (code < 123))
+            || ((code > 47) && (code < 58))) {
             value.append(advance())
             next = peek()
             code = next?.code ?: 0

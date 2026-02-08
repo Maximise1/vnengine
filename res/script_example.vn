@@ -6,6 +6,22 @@ block start { // Always beginning execution from "start" block
     mc "..."
     "Narrator speech."
 
+    _test_underscore = 42
+
+    if (_test_underscore == 42) {
+        "Underscores work!!!"
+    }
+
+    BiG_LeTtErS = 42
+    if (BiG_LeTtErS == 42) {
+        "Big letters work!!!"
+    }
+
+    a1 = 42
+    if (a1 == 42) {
+        "Numbers work!!!"
+    }
+
     // Common backgrounds
     background 3 { // Static, centered
         advance = after_click

@@ -13,7 +13,7 @@ import kotlin.test.assertNull
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class PersistentDataHandlerTest {
 
-    private lateinit var handler: PersistentDataHandler
+    private lateinit var handler: PersistentDataLoader
     private lateinit var testDataDir: File
 
     @BeforeEach
@@ -21,7 +21,7 @@ class PersistentDataHandlerTest {
         testDataDir = tempDir.resolve("data/persistence").toFile()
         testDataDir.mkdirs()
 
-        handler = PersistentDataHandler()
+        handler = PersistentDataLoader()
 
         // Override paths to use temp directory
         setPrivateField("variablesPath", testDataDir.resolve("variables.bin").absolutePath)
@@ -29,7 +29,7 @@ class PersistentDataHandlerTest {
     }
 
     private fun setPrivateField(fieldName: String, value: String) {
-        val field = PersistentDataHandler::class.java.getDeclaredField(fieldName)
+        val field = PersistentDataLoader::class.java.getDeclaredField(fieldName)
         field.isAccessible = true
         field.set(handler, value)
     }

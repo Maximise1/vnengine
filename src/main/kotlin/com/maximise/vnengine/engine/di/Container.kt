@@ -6,15 +6,16 @@ import com.maximise.vnengine.engine.engine.GameEngine
 import com.maximise.vnengine.engine.lexer.Lexer
 import com.maximise.vnengine.engine.parser.Indexer
 import com.maximise.vnengine.engine.parser.Parser
-import com.maximise.vnengine.engine.persistence.PersistentDataHandler
+import com.maximise.vnengine.engine.persistence.PersistentDataLoader
 import com.maximise.vnengine.engine.persistence.SaveHandler
 import com.maximise.vnengine.engine.runtime.Interpreter
 import com.maximise.vnengine.engine.ui.GUI
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.io.File
 
 class Container {
-    val persistentDataHandler: PersistentDataHandler by lazy {
-        PersistentDataHandler()
+    val persistentDataLoader: PersistentDataLoader by lazy {
+        PersistentDataLoader()
     }
 
     val saveHandler: SaveHandler by lazy {
@@ -45,9 +46,10 @@ class Container {
         GameEngine(
             interpreter = interpreter,
             saveHandler = saveHandler,
-            persistentDataHandler = persistentDataHandler,
+            persistentDataLoader = persistentDataLoader,
             program = parseProgram(),
-            assetLoader = assetLoader
+            assetLoader = assetLoader,
+            screenshotProvider = null
         )
     }
 
@@ -56,6 +58,10 @@ class Container {
             gameEngine = gameEngine,
             assetLoader = assetLoader
         )
+    }
+
+    init {
+        gameEngine.setScreenShotProvider(gui)
     }
 
     fun parseProgram(): VnNode.Program {

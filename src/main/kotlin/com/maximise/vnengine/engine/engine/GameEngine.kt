@@ -1,12 +1,15 @@
 package com.maximise.vnengine.engine.engine
 
 import com.maximise.vnengine.engine.ast.AdvanceMode
+import com.maximise.vnengine.engine.ast.Value
 import com.maximise.vnengine.engine.ast.VnNode
 import com.maximise.vnengine.engine.ast.asBool
-import com.maximise.vnengine.engine.persistence.PersistentDataHandler
+import com.maximise.vnengine.engine.persistence.PersistentDataLoader
+import com.maximise.vnengine.engine.persistence.Save
 import com.maximise.vnengine.engine.persistence.SaveHandler
 import com.maximise.vnengine.engine.runtime.ExecutionState
 import com.maximise.vnengine.engine.runtime.Interpreter
+import com.maximise.vnengine.engine.ui.ScreenshotProvider
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -24,6 +27,8 @@ import org.luaj.vm2.lib.TwoArgFunction
 import org.luaj.vm2.lib.ZeroArgFunction
 import org.luaj.vm2.lib.jse.JsePlatform
 import java.io.File
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import kotlin.coroutines.cancellation.CancellationException
 
 private val logger = KotlinLogging.logger {  }
@@ -31,9 +36,10 @@ private val logger = KotlinLogging.logger {  }
 class GameEngine(
     private val interpreter: Interpreter,
     private val saveHandler: SaveHandler,
-    private val persistentDataHandler: PersistentDataHandler,
+    private val persistentDataLoader: PersistentDataLoader,
     private val program: VnNode.Program,
-    private val assetLoader: AssetLoader
+    private val assetLoader: AssetLoader,
+    private var screenshotProvider: ScreenshotProvider?
 ) {
     private val stateListeners = mutableListOf<(GameState) -> Unit>()
     private val lua: Globals = JsePlatform.standardGlobals()
@@ -42,11 +48,38 @@ class GameEngine(
         Dispatchers.Default + SupervisorJob()
     )
     private var currentGameJob: Job? = null
-    private val screenState: MutableMap<String, Any> = mutableMapOf()
+    private val persistentVariables = persistentDataLoader.loadVariables()
+    private val seenDialogue = persistentDataLoader.loadSeenDialogue()
+    private val saves = groupSaves(saveHandler.listSaves().sorted())
 
     init {
         setupLuaAPI()
         loadLuaScripts()
+    }
+
+    private fun groupSaves(saves: List<String>): MutableMap<String, MutableList<String>> {
+        val groupedSaves = mutableMapOf<String, MutableList<String>>()
+
+        saves.forEach { save ->
+            val groupName = try {
+                save.split('_').subList(0, 3).joinToString("_")
+            } catch (e: IndexOutOfBoundsException) {
+                logger.warn { "Save $save is named incorrectly and couldn't be grouped properly. Skipping." }
+                return@forEach
+            }
+
+            if (groupedSaves.contains(groupName)) {
+                groupedSaves[groupName]!!.add(save)
+            } else {
+                groupedSaves.put(groupName, mutableListOf(save))
+            }
+        }
+
+        return groupedSaves
+    }
+
+    fun setScreenShotProvider(sp: ScreenshotProvider) {
+        screenshotProvider = sp
     }
 
     fun addStateListener(listener: (GameState) -> Unit) {
@@ -129,6 +162,106 @@ class GameEngine(
                 return NIL
             }
         })
+
+        lua.set("list_all_saves", object : ZeroArgFunction() {
+            override fun call(): LuaValue {
+                val saveNames = saveHandler.listSaves()
+                return listToLuaTable(saveNames)
+            }
+        })
+
+        lua.set("load_save_preview", object : OneArgFunction() {
+            override fun call(saveName: LuaValue): LuaValue {
+                val name = saveName.tojstring()
+                val savePreview = saveHandler.loadSavePreview(name)
+                return mapToLuaTable(savePreview.toMap())
+            }
+        })
+
+        lua.set("make_save", object : OneArgFunction() {
+            override fun call(saveName: LuaValue): LuaValue {
+                val lastId = persistentVariables["saveLastId"]
+                val id = if (lastId != null) {
+                    (lastId as Value.Num).v.toInt()
+                } else {
+                    0
+                }
+                save(
+                    name = saveName.tojstring(),
+                    lastId = id,
+                    image = screenshotProvider?.makeGameScreenScreenshot() ?:
+                        throw RuntimeException("GUI wasn't properly initialized")
+                )
+                return NIL
+            }
+        })
+
+        lua.set("show_save_screen", object : TwoArgFunction() {
+            override fun call(dateLua: LuaValue, isSaveLua: LuaValue): LuaValue {
+                val isSave = isSaveLua.toboolean()
+
+                val date = if (dateLua.tojstring() == "today") {
+                    getTodaySaveGroupName()
+                } else {
+                    dateLua.tojstring()
+                }
+
+                if (!saves.contains(date)) {
+                    saves[date] = mutableListOf<String>()
+                }
+
+                val saveNames = saves[date]!!
+
+                val savePreviews = saveNames.map { saveName ->
+                    val save = saveHandler.loadSavePreview(saveName).toMap()
+                    save["dateTime"] = saveName
+                }
+
+                val pages = mutableListOf<Map<String, Any>>()
+                if (!isSave) {
+                    saves.forEach { groupName, saveNames ->
+                        if (groupName != date) {
+                            pages.add(mapOf(
+                                "isActive" to false,
+                                "date" to groupName,
+                                "prettyDate" to getPrettyDate(groupName)
+                            ))
+                        } else {
+                            pages.add(mapOf(
+                                "isActive" to true,
+                                "date" to date,
+                                "prettyDate" to getPrettyDate(date)
+                            ))
+                        }
+                    }
+                } else {
+                    pages.add(mapOf(
+                        "isActive" to true,
+                        "date" to date,
+                        "prettyDate" to getPrettyDate(date)
+                    ))
+                }
+
+                val data: Map<String, Any> = mapOf(
+                    "pages" to pages,
+                    "saves" to savePreviews,
+                    "isSave" to isSave
+                )
+
+                showScreen("save_screen", data)
+                return NIL
+            }
+        })
+    }
+
+    private fun getTodaySaveGroupName(): String {
+        val formatter = DateTimeFormatter.ofPattern("yyyy_MM_dd")
+        val current = LocalDateTime.now().format(formatter)
+        return current
+    }
+
+    private fun getPrettyDate(date: String): String { //TODO
+        return date
     }
 
     private fun loadLuaScripts(path: String = "/home/smol/project/VNEngine/res/scripts") {
@@ -172,7 +305,6 @@ class GameEngine(
     }
 
     fun start() {
-        logger.debug { "Calling show_main_menu lua function" }
         callLuaFunction("show_main_menu", emptyList())
     }
 
@@ -185,17 +317,18 @@ class GameEngine(
 
     suspend fun runGame(saveName: String? = null) {
         val (stack, vars) = if (saveName != null) {
-            saveHandler.loadSave(saveName)
+            val save = saveHandler.loadSave(saveName)
+            Pair(save.stack, save.variables)
         } else {
             Pair(listOf(), mutableMapOf())
         }
 
         interpreter.run(
             program = program,
-            persistentDialogue = persistentDataHandler.getSeenDialogue(),
+            persistentDialogue = seenDialogue,
             savedStack = stack,
             savedVariables = vars,
-            persistentValues = persistentDataHandler.getVariables()
+            persistentValues = persistentVariables
         )
 
         while (true) {
@@ -280,11 +413,17 @@ class GameEngine(
         interpreter.selectChoice(choiceIndex)
     }
 
-    fun save(name: String? = null) {
-        saveHandler.makeSave(
+    fun save(
+        name: String? = null,
+        lastId: Int,
+        image: ByteArray?
+    ): Int {
+        return saveHandler.makeSave(
             name = name,
             stack = interpreter.context.stack,
-            variables = interpreter.context.variables
+            variables = interpreter.context.variables,
+            lastId = lastId,
+            image = image ?: ByteArray(0)
         )
     }
 
@@ -340,7 +479,28 @@ class GameEngine(
         return table
     }
 
+    private fun listToLuaTable(list: List<Any>): LuaValue {
+        val table = LuaValue.tableOf()
+
+        list.forEachIndexed { index, value ->
+            val luaValue = when (value) {
+                is Int -> LuaValue.valueOf(value)
+                is Double -> LuaValue.valueOf(value)
+                is String -> LuaValue.valueOf(value)
+                is Boolean -> LuaValue.valueOf(value)
+                is Map<*, *> -> mapToLuaTable(value as Map<String, Any>)
+                else -> LuaValue.valueOf(value.toString())
+            }
+            table.set(index, luaValue)
+        }
+
+        return table
+    }
+
     fun shutdown() {
+        persistentDataLoader.saveVariables(persistentVariables)
+        persistentDataLoader.saveSeenDialogue(seenDialogue)
+
         engineScope.cancel()
         uiEventChannel?.close()
     }

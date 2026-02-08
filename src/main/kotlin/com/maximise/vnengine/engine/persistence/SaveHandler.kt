@@ -18,25 +18,40 @@ import kotlin.collections.set
 class SaveHandler {
 
     private val SAVE_DIR = "data/saves/"
+    private val stringEncoding = Charsets.UTF_8
 
-    fun loadSave(name: String): Pair<List<Pair<String, Int>>, MutableMap<String, Value>> {
-        if (!File(SAVE_DIR + name).exists()) {
+    fun loadSave(name: String): Save {
+        if (!File("$SAVE_DIR$name.save").exists()) {
             throw RuntimeException("Save $name not found.")
         }
 
-        val input = FileInputStream(SAVE_DIR + name)
-        val variables: MutableMap<String, Value> = mutableMapOf()
-        val stack: MutableList<Pair<String, Int>> = mutableListOf()
+        val input = FileInputStream("$SAVE_DIR$name.save")
 
         try {
             DataInputStream(input).use { inp ->
+                // name
+                val nameLength = inp.readInt()
+                val nameBytes = ByteArray(nameLength)
+                inp.readFully(nameBytes)
+                val saveName = String(nameBytes, stringEncoding)
+
+                // id
+                val id = inp.readInt()
+
+                // image
+                val imageSize = inp.readInt()
+                val image = ByteArray(imageSize)
+                inp.readFully(image)
+
+                // variables
+                val variables: MutableMap<String, Value> = mutableMapOf()
                 val variablesSize = inp.readInt()
 
                 repeat(variablesSize) {
-                    val nameLength = inp.readInt()
-                    val nameBytes = ByteArray(nameLength)
-                    inp.readFully(nameBytes)
-                    val name = String(nameBytes, Charsets.UTF_8)
+                    val varNameLength = inp.readInt()
+                    val varNameBytes = ByteArray(varNameLength)
+                    inp.readFully(varNameBytes)
+                    val varName = String(varNameBytes, stringEncoding)
 
                     val byte = inp.readByte()
                     val value = when (byte) {
@@ -44,45 +59,81 @@ class SaveHandler {
                             val size = inp.readInt()
                             val strBytes = ByteArray(size)
                             inp.readFully(strBytes)
-                            val str = String(strBytes, Charsets.UTF_8)
-                            Value.Str(
-                                v = str
-                            )
+                            val str = String(strBytes, stringEncoding)
+                            Value.Str(v = str)
                         }
                         1.toByte() -> {
                             val num = inp.readDouble()
-                            Value.Num(
-                                v = num
-                            )
+                            Value.Num(v = num)
                         }
                         2.toByte() -> {
                             val b = inp.readBoolean()
-                            Value.Bool(
-                                v = b
-                            )
+                            Value.Bool(v = b)
                         }
-                        else -> throw RuntimeException("Save file $name is corrupted.")
+                        else -> throw RuntimeException("Save file $varName.save is corrupted.")
                     }
-                    variables[name] = value
+                    variables[varName] = value
                 }
 
+                // stack
                 val stackSize = inp.readInt()
+                val stack: MutableList<Pair<String, Int>> = mutableListOf()
                 repeat(stackSize) {
                     val hashLength = inp.readInt()
                     val hashBytes = ByteArray(hashLength)
                     inp.readFully(hashBytes)
-                    val hash = String(hashBytes, Charsets.UTF_8)
+                    val hash = String(hashBytes, stringEncoding)
 
                     val index = inp.readInt()
 
                     stack.add(Pair(hash, index))
                 }
+
+                return Save(
+                    name = saveName,
+                    id = id,
+                    image = image,
+                    stack = stack,
+                    variables = variables
+                )
             }
         } catch (e: IOException) {
             throw RuntimeException("Corrupted file: $name")
         }
+    }
 
-        return Pair(stack, variables)
+    fun loadSavePreview(filename: String): SavePreview {
+        if (!File("$SAVE_DIR$filename").exists()) {
+            throw RuntimeException("Save $filename not found.")
+        }
+
+        val input = FileInputStream("$SAVE_DIR$filename")
+
+        try {
+            DataInputStream(input).use { inp ->
+                // name
+                val nameLength = inp.readInt()
+                val nameBytes = ByteArray(nameLength)
+                inp.readFully(nameBytes)
+                val saveName = String(nameBytes, stringEncoding)
+
+                // id
+                val id = inp.readInt()
+
+                // image
+                val imageSize = inp.readInt()
+                val image = ByteArray(imageSize)
+                inp.readFully(image)
+
+                return SavePreview(
+                    name = saveName,
+                    id = id,
+                    image = image
+                )
+            }
+        } catch (e: IOException) {
+            throw RuntimeException("Corrupted file: $filename")
+        }
     }
 
     private fun getSaveName(): String {
@@ -99,31 +150,46 @@ class SaveHandler {
 
     fun makeSave(
         name: String?,
+        lastId: Int,
+        image: ByteArray,
         stack: ArrayDeque<ExecutionFrame>,
         variables: MutableMap<String, Value>
-    ) {
+    ): Int {
         val dir = File(SAVE_DIR)
         if (!dir.exists()) {
             dir.mkdirs()
         }
+        val date = getSaveName()
 
-        val saveName = (name ?: getSaveName()) + ".save"
-        File(SAVE_DIR + saveName).createNewFile()
+        val saveName = (name ?: date)
+        File(SAVE_DIR + date).createNewFile()
 
-        val output = FileOutputStream(SAVE_DIR + saveName)
+        val output = FileOutputStream("$SAVE_DIR$saveName.save")
 
         DataOutputStream(output).use { out ->
-            out.writeInt(variables.size)
+            // name
+            val bytes = saveName.toByteArray(stringEncoding)
+            out.writeInt(bytes.size)
+            out.write(bytes)
 
+            // id
+            out.writeInt(lastId)
+
+            // image
+            out.writeInt(image.size)
+            out.write(image)
+
+            // variables
+            out.writeInt(variables.size)
             for ((key, value) in variables) {
-                val bytes = key.toByteArray(Charsets.UTF_8)
+                val bytes = key.toByteArray(stringEncoding)
                 out.writeInt(bytes.size)
                 out.write(bytes)
 
                 when (value) {
                     is Value.Str -> {
                         out.writeByte(0) // 0 for String vars
-                        val bytes = value.v.toByteArray(Charsets.UTF_8)
+                        val bytes = value.v.toByteArray(stringEncoding)
                         out.writeInt(bytes.size)
                         out.write(bytes)
                     }
@@ -138,14 +204,17 @@ class SaveHandler {
                 }
             }
 
+            // stack
             out.writeInt(stack.size)
             stack.forEach { frame ->
-                val bytes = frame.blockHash.toByteArray(Charsets.UTF_8)
+                val bytes = frame.blockHash.toByteArray(stringEncoding)
                 out.writeInt(bytes.size)
                 out.write(bytes)
 
                 out.writeInt(frame.currentIndex)
             }
         }
+
+        return lastId + 1
     }
 }

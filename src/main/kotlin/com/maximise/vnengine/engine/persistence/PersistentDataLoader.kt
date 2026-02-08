@@ -11,12 +11,9 @@ import java.io.IOException
 
 private val logger = KotlinLogging.logger {  }
 
-class PersistentDataHandler {
+class PersistentDataLoader {
     private val variablesPath: String = "data/persistence/variables.bin"
     private val dialoguePath: String = "data/persistence/dialogue.bin"
-
-    fun getSeenDialogue(): MutableMap<String, Short> = loadSeenDialogue()
-    fun getVariables(): MutableMap<String, Value> = loadVariables()
 
     fun loadSeenDialogue(): MutableMap<String, Short> {
         val file = File(dialoguePath)

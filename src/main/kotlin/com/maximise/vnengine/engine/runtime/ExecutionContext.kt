@@ -8,13 +8,20 @@ class ExecutionContext(
     dialogue: MutableMap<String, Short>,
     savedStack: List<Pair<String, Int>>,
     savedVariables: MutableMap<String, Value>,
-    persistentVals: MutableMap<String, Value>
+    private val persistentVals: MutableMap<String, Value>
 ) {
 
     val stack: ArrayDeque<ExecutionFrame> = reconstructStack(savedStack)
     val variables: MutableMap<String, Value> = savedVariables
     val seenDialogue: MutableMap<String, Short> = dialogue.ifEmpty { indexBlocksWithDialogue() }
-    val persistentValues: MutableMap<String, Value> = persistentVals
+
+    fun setPersistentVariable(name: String, value: Value) {
+        persistentVals[name] = value
+    }
+
+    fun getPersistentVariable(name: String): Value? {
+        return persistentVals[name]
+    }
 
     var currentBlockId: String = "" // TODO: remove this abomination. It's only used during seen dialogue checks.
 

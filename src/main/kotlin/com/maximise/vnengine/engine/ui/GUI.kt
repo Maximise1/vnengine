@@ -2,6 +2,7 @@ package com.maximise.vnengine.engine.ui
 
 import com.maximise.vnengine.engine.ast.PositionMode
 import com.maximise.vnengine.engine.ast.PositionValue
+import com.maximise.vnengine.engine.ast.Value
 import com.maximise.vnengine.engine.engine.AssetLoader
 import com.maximise.vnengine.engine.engine.GameEngine
 import com.maximise.vnengine.engine.engine.GameState
@@ -13,21 +14,26 @@ import org.cef.browser.CefMessageRouter
 import org.cef.callback.CefQueryCallback
 import org.cef.handler.CefLoadHandlerAdapter
 import org.cef.handler.CefMessageRouterHandlerAdapter
-import org.luaj.vm2.ast.Str
+import java.awt.image.BufferedImage
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.util.concurrent.TimeUnit
+import javax.imageio.IIOImage
 import javax.imageio.ImageIO
+import javax.imageio.ImageWriteParam
 
 private val logger = KotlinLogging.logger {  }
 
 class GUI(
     private val gameEngine: GameEngine,
     private val assetLoader: AssetLoader
-) : UserInterface {
+) : UserInterface, ScreenshotProvider {
 
     private val templateEngine = TemplateEngine()
     private lateinit var browser: CefBrowser
     private var engineStarted = false
     private val screenStack: ArrayDeque<ScreenState> = ArrayDeque()
+    private var gameScreenshot: ByteArray? = null
 
     @Suppress("UNCHECKED_CAST")
     override fun handleState(state: GameState) {
@@ -40,6 +46,11 @@ class GUI(
 
         when (state) {
             is GameState.ShowScreen -> {
+                captureScreenIfNeeded(
+                    oldScreen = screenStack.lastOrNull()?.screen ?: "main_menu",
+                    newScreen = state.screenName
+                )
+
                 screenStack.add(ScreenState(
                     screen = state.screenName,
                 ))
@@ -187,6 +198,84 @@ class GUI(
         }
     }
 
+    private fun captureScreenIfNeeded(newScreen: String, oldScreen: String) {
+        val utilityScreens = getUtilityScreens()
+
+        if (oldScreen !in utilityScreens && newScreen in utilityScreens) {
+            try {
+                gameScreenshot = captureCurrentScreenAsWebpThumbnail()
+                logger.debug { "Captured game screenshot (${gameScreenshot?.size} bytes)" }
+            } catch (e: Exception) {
+                logger.error(e) { "Failed to capture screenshot. Error: $e" }
+            }
+        }
+    }
+
+    private fun captureCurrentScreenAsWebpThumbnail(): ByteArray {
+        browser.executeJavaScript( // Force layout and paint
+            "void document.body.offsetHeight;",
+            browser.url,
+            0
+        )
+
+        val image = browser.createScreenshot(true)
+            .get(100, TimeUnit.MILLISECONDS)
+
+        return imageToWebpThumbnail(image)
+    }
+
+    private fun imageToWebpThumbnail(image: BufferedImage): ByteArray {
+        val targetWidth = 240
+        val targetHeight = 135
+
+        val thumbnail = BufferedImage(
+            targetWidth,
+            targetHeight,
+            BufferedImage.TYPE_INT_RGB
+        )
+
+        val g = thumbnail.createGraphics()
+        g.drawImage(
+            image,
+            0,
+            0,
+            targetWidth,
+            targetHeight,
+            null
+        )
+        g.dispose()
+
+        ByteArrayOutputStream().use { out ->
+            val writers = ImageIO.getImageWritersByFormatName("webp")
+
+            if (!writers.hasNext()) {
+                logger.warn { "WebP writer not available, falling back to PNG" }
+                ImageIO.write(image, "png", out)
+                return out.toByteArray()
+            }
+
+            val writer = writers.next()
+            val ios = ImageIO.createImageInputStream(out)
+
+            try {
+                writer.output = ios
+
+                val param = writer.defaultWriteParam
+                if (param.canWriteCompressed()) {
+                    param.compressionMode = ImageWriteParam.MODE_EXPLICIT
+                    param.compressionQuality = 0.75f
+                }
+
+                writer.write(null, IIOImage(thumbnail, null, null), param)
+            } finally {
+                ios.close()
+                writer.dispose()
+            }
+
+            return out.toByteArray()
+        }
+    }
+
     /**
      * returns Pair(width, height)
      */
@@ -271,6 +360,7 @@ class GUI(
 
     private fun showScreen(screenName: String, data: Map<String, Any>) {
         logger.info { "Showing screen: $screenName" }
+        logger.debug { "data = $data" }
 
         val html = templateEngine.render(
             assetLoader.resolveScreen("$screenName.html"),
@@ -299,5 +389,13 @@ class GUI(
                 }
             })();
         """,browser.url, 0)
+    }
+
+    fun getUtilityScreens(): List<String> { // TODO: wire it up to GameEngine and add corresponding lua function
+        return listOf("save_screen", "main_menu")
+    }
+
+    override fun makeGameScreenScreenshot(): ByteArray {
+        return gameScreenshot ?: captureCurrentScreenAsWebpThumbnail()
     }
 }

@@ -17,6 +17,11 @@ import javax.swing.SwingUtilities
 
 val logger = KotlinLogging.logger {  }
 
+// save
+// load
+// skip
+// menu
+
 fun main(args: Array<String>) {
     CefApp.startup(args)
 
